@@ -32,7 +32,7 @@ export function GraphTabBar() {
               <span className="md:hidden">
                 <Icon size={20} />
               </span>
-              <span className="max-md:hidden">
+              <span className="flex items-center gap-1 max-md:hidden">
                 <Icon size={15} />
                 {label}
               </span>
