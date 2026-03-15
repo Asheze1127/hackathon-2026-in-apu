@@ -5,7 +5,6 @@ import {
   type OnboardingFormInput,
 } from "@/lib/onboarding/form-schema"
 import { AppActionError, mapUnknownToAppActionError } from "@/lib/errors"
-import prisma from "@/lib/prisma/client"
 import { createClient } from "@/lib/supabase/server"
 
 function normalizeInput(input: OnboardingFormInput) {
@@ -16,9 +15,6 @@ function normalizeInput(input: OnboardingFormInput) {
 }
 
 export async function submitOnboardingForm(data: unknown) {
-  const parsed = formSchema.parse(data)
-  const normalized = normalizeInput(parsed)
-
   const supabase = await createClient()
   const {
     data: { user },
@@ -30,53 +26,71 @@ export async function submitOnboardingForm(data: unknown) {
   }
 
   try {
-    const result = await prisma.$transaction(async (tx) => {
-      const profile = await tx.profile.findUnique({
-        where: { id: user.id },
-        select: { id: true },
+    const parsed = formSchema.parse(data)
+    const normalized = normalizeInput(parsed)
+
+    const { error: profileUpsertError } = await supabase
+      .from("profiles")
+      .upsert(
+        {
+          id: user.id,
+          onboarded: false,
+        },
+        {
+          onConflict: "id",
+        }
+      )
+
+    if (profileUpsertError) {
+      throw new Error(profileUpsertError.message)
+    }
+
+    const nodeId = crypto.randomUUID()
+    const { data: node, error: nodeInsertError } = await supabase
+      .from("nodes")
+      .insert({
+        id: nodeId,
+        user_id: user.id,
+        parent_id: null,
+        concrete_answer: normalized.concreteAnswer,
+        abstract_answer: normalized.abstractAnswer,
+        real_tags: [],
+        emotional_tags: [],
       })
+      .select(
+        "id, parent_id, concrete_answer, abstract_answer, real_tags, emotional_tags, created_at"
+      )
+      .single()
 
-      if (!profile) {
-        throw new AppActionError(
-          "PROFILE_NOT_FOUND",
-          "プロフィールが見つかりません。"
-        )
-      }
+    if (nodeInsertError) {
+      throw new Error(nodeInsertError.message)
+    }
 
-      const updatedProfile = await tx.profile.update({
-        where: { id: user.id },
-        data: {
-          onboarded: true,
-        },
-        select: {
-          id: true,
-          goal: true,
-          onboarded: true,
-        },
+    const { data: profile, error: profileUpdateError } = await supabase
+      .from("profiles")
+      .update({
+        onboarded: true,
       })
+      .eq("id", user.id)
+      .select("id, goal, onboarded")
+      .single()
 
-      const node = await tx.node.create({
-        data: {
-          userId: user.id,
-          parentId: null,
-          concreteAnswer: normalized.concreteAnswer,
-          abstractAnswer: normalized.abstractAnswer,
-          realTags: [], //TODO: AIでタグ付け
-          emotionalTags: [], //TODO: AIでタグ付け
-        },
-        select: {
-          id: true,
-          parentId: true,
-          concreteAnswer: true,
-          abstractAnswer: true,
-          realTags: true,
-          emotionalTags: true,
-          createdAt: true,
-        },
-      })
+    if (profileUpdateError) {
+      throw new Error(profileUpdateError.message)
+    }
 
-      return { profile: updatedProfile, node }
-    })
+    const result = {
+      profile,
+      node: {
+        id: node.id,
+        parentId: node.parent_id,
+        concreteAnswer: node.concrete_answer,
+        abstractAnswer: node.abstract_answer,
+        realTags: node.real_tags,
+        emotionalTags: node.emotional_tags,
+        createdAt: node.created_at,
+      },
+    }
 
     console.info("[onboarding] completed", {
       userId: user.id,
@@ -93,6 +107,13 @@ export async function submitOnboardingForm(data: unknown) {
 
     console.error("[onboarding] failed", {
       userId: user.id,
+      originalError:
+        error instanceof Error
+          ? {
+              message: error.message,
+              name: error.name,
+            }
+          : error,
       code: mappedError.code,
       message: mappedError.message,
     })
