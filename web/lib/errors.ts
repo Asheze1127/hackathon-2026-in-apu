@@ -5,6 +5,7 @@ export type AppErrorCode =
   | "UNAUTHORIZED"
   | "NODE_NOT_FOUND"
   | "FORBIDDEN"
+  | "CIRCULAR_REFERENCE"
   | "PROFILE_NOT_FOUND"
   | "INTERNAL_ERROR"
 
