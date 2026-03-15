@@ -48,7 +48,10 @@ export function mapUnknownToErrorResponse(
   }
 
   if (error instanceof ZodError) {
-    return toErrorResponse("VALIDATION_ERROR", "入力値が不正です。")
+    return toErrorResponse(
+      "VALIDATION_ERROR",
+      error.issues[0]?.message ?? "入力値が不正です。"
+    )
   }
 
   return toErrorResponse("INTERNAL_ERROR", fallbackMessage)
@@ -63,7 +66,10 @@ export function mapUnknownToAppActionError(
   }
 
   if (error instanceof ZodError) {
-    return new AppActionError("VALIDATION_ERROR", "入力値が不正です。")
+    return new AppActionError(
+      "VALIDATION_ERROR",
+      error.issues[0]?.message ?? "入力値が不正です。"
+    )
   }
 
   return new AppActionError("INTERNAL_ERROR", fallbackMessage)

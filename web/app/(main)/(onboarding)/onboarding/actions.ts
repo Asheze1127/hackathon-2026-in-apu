@@ -4,6 +4,7 @@ import {
   formSchema,
   type OnboardingFormInput,
 } from "@/lib/onboarding/form-schema"
+import { normalizeProfileSettingsInput } from "@/lib/profile/form-schema"
 import { AppActionError, mapUnknownToAppActionError } from "@/lib/errors"
 import { classifyOnboardingTags } from "@/lib/onboarding/tagging"
 import { createClient } from "@/lib/supabase/server"
@@ -15,7 +16,10 @@ function normalizeInput(input: OnboardingFormInput) {
   }
 }
 
-export async function submitOnboardingForm(data: unknown) {
+export async function submitOnboardingForm(
+  data: unknown,
+  options?: { saveProfile?: boolean }
+) {
   const supabase = await createClient()
   const {
     data: { user },
@@ -29,6 +33,8 @@ export async function submitOnboardingForm(data: unknown) {
   try {
     const parsed = formSchema.parse(data)
     const normalized = normalizeInput(parsed)
+    const normalizedProfile = normalizeProfileSettingsInput(parsed)
+    const shouldSaveProfile = options?.saveProfile ?? true
 
     const tags = await classifyOnboardingTags({
       concreteAnswer: normalized.concreteAnswer,
@@ -56,7 +62,16 @@ export async function submitOnboardingForm(data: unknown) {
       .upsert(
         {
           id: user.id,
+          display_name: normalizedProfile.displayName,
           onboarded: false,
+          ...(shouldSaveProfile
+            ? {
+                age: normalizedProfile.age,
+                avatar_url: normalizedProfile.avatarUrl,
+                current_occupation: normalizedProfile.currentOccupation,
+                location: normalizedProfile.location,
+              }
+            : {}),
         },
         {
           onConflict: "id",
@@ -94,7 +109,9 @@ export async function submitOnboardingForm(data: unknown) {
         onboarded: true,
       })
       .eq("id", user.id)
-      .select("id, goal, onboarded")
+      .select(
+        "id, goal, display_name, avatar_url, current_occupation, age, location, onboarded"
+      )
       .single()
 
     if (profileUpdateError) {
@@ -120,6 +137,7 @@ export async function submitOnboardingForm(data: unknown) {
       abstractAnswerLength: normalized.abstractAnswer?.length ?? 0,
       realTagCount: tags.realTagIds.length,
       emotionalTagCount: tags.emotionalTagIds.length,
+      savedProfileSettings: shouldSaveProfile,
     })
 
     return result

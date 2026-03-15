@@ -14,12 +14,17 @@ datasource db {
 
 // auth.users の拡張。アプリ固有情報のみ持つ。
 model Profile {
-  id        String   @id @db.Uuid                  // auth.users.id と同値
-  goal      String?  @db.Text                      // ユーザーの最終目標
-  onboarded Boolean  @default(false)               // 初回アンケート完了フラグ
-  createdAt DateTime @default(now()) @map("created_at")
+  id                String   @id @db.Uuid // auth.users.id と同値
+  displayName       String?  @map("display_name") @db.VarChar(50) // User-visible display name
+  goal              String?  @db.Text // ユーザーの最終目標
+  avatarUrl         String?  @map("avatar_url") @db.Text // Profile avatar image URL
+  currentOccupation String?  @map("current_occupation") @db.Text // Current occupation shown on the profile
+  age               Int?     @db.SmallInt // User-entered age for profile display
+  location          String?  @db.Text // Current place of residence shown on the profile
+  onboarded         Boolean  @default(false) // 初回アンケート完了フラグ
+  createdAt         DateTime @default(now()) @map("created_at")
 
-  nodes Node[]
+  nodes            Node[]
   chatRoomsCreated ChatRoom[]       @relation("ChatRoomCreator")
   chatRoomMembers  ChatRoomMember[]
   messages         Message[]
@@ -30,9 +35,9 @@ model Profile {
 // realTag・emotionalTag で共通利用するタグマスタ。運営がシードで投入。
 model Tag {
   id          String   @id @default(uuid()) @db.Uuid
-  name        String   @unique @db.VarChar(100)    // タグ名（例：大学進学、挑戦）
-  type        String   @db.VarChar(20)             // "real" | "emotional"
-  description String?  @db.Text                   // タグの説明
+  name        String   @unique @db.VarChar(100) // タグ名（例：大学進学、挑戦）
+  type        String   @db.VarChar(20) // "real" | "emotional"
+  description String?  @db.Text // タグの説明
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([type])
@@ -43,8 +48,8 @@ model Tag {
 // 意思決定の背景・価値観を引き出す抽象的な質問マスタ。運営がシードで投入。
 model AbstractQuestion {
   id          String   @id @default(uuid()) @db.Uuid
-  question    String   @db.Text                   // 質問文
-  description String?  @db.Text                   // 質問文を生成した理由などを入れる。
+  question    String   @db.Text // 質問文
+  description String?  @db.Text // 質問文を生成した理由などを入れる。
   createdAt   DateTime @default(now()) @map("created_at")
 
   nodes Node[]
@@ -60,14 +65,14 @@ model AbstractQuestion {
 //   CREATE INDEX idx_nodes_emotional_tags ON nodes USING GIN (emotional_tags);
 model Node {
   id                 String   @id @default(uuid()) @db.Uuid
-  userId             String   @db.Uuid @map("user_id")              // ノードの所有者（RLS で制御）
-  abstractQuestionId String?  @db.Uuid @map("abstract_question_id") // 付属する抽象質問（任意）
-  concreteAnswer     String   @db.Text @map("concrete_answer")       // 「今何をしていますか？」への回答
-  abstractAnswer     String?  @db.Text @map("abstract_answer")       // 抽象質問への回答
-  realTags           Json     @default("[]") @map("real_tags")       // 事実タグ ID 配列
-  emotionalTags      Json     @default("[]") @map("emotional_tags")  // 感情タグ ID 配列（類似ユーザー検索に使用）
-  visualState        String?  @db.VarChar(50) @map("visual_state")   // 3D 可視化用の状態値（P3）
-  parentId           String?  @db.Uuid @map("parent_id")             // 親ノード ID。NULL = ルート
+  userId             String   @map("user_id") @db.Uuid // ノードの所有者（RLS で制御）
+  abstractQuestionId String?  @map("abstract_question_id") @db.Uuid // 付属する抽象質問（任意）
+  concreteAnswer     String   @map("concrete_answer") @db.Text // 「今何をしていますか？」への回答
+  abstractAnswer     String?  @map("abstract_answer") @db.Text // 抽象質問への回答
+  realTags           Json     @default("[]") @map("real_tags") // 事実タグ ID 配列
+  emotionalTags      Json     @default("[]") @map("emotional_tags") // 感情タグ ID 配列（類似ユーザー検索に使用）
+  visualState        String?  @map("visual_state") @db.VarChar(50) // 3D 可視化用の状態値（P3）
+  parentId           String?  @map("parent_id") @db.Uuid // 親ノード ID。NULL = ルート
   createdAt          DateTime @default(now()) @map("created_at")
 
   profile          Profile           @relation(fields: [userId], references: [id])
@@ -88,8 +93,8 @@ model ChatRoom {
   goal      String?  @db.Text
   createdAt DateTime @default(now()) @map("created_at")
 
-  creator Profile          @relation("ChatRoomCreator", fields: [createdBy], references: [id])
-  members ChatRoomMember[]
+  creator  Profile          @relation("ChatRoomCreator", fields: [createdBy], references: [id])
+  members  ChatRoomMember[]
   messages Message[]
 
   @@index([roomType])

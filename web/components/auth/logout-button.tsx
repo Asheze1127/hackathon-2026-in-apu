@@ -1,22 +1,55 @@
 "use client"
 
+import { useTransition } from "react"
+import { LogOut } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 
-export function LogoutButton() {
-  const router = useRouter()
+interface LogoutButtonProps extends Omit<
+  React.ComponentProps<typeof Button>,
+  "children" | "onClick"
+> {
+  children?: React.ReactNode
+}
 
-  const logout = async () => {
-    const supabase = createClient()
-    await supabase.auth.signOut()
-    router.push("/auth/login")
+export function LogoutButton({
+  children,
+  className,
+  disabled,
+  size = "default",
+  variant = "destructive",
+  ...props
+}: LogoutButtonProps) {
+  const router = useRouter()
+  const [isPending, startTransition] = useTransition()
+
+  const logout = () => {
+    startTransition(async () => {
+      const supabase = createClient()
+      await supabase.auth.signOut()
+      router.replace("/auth/login")
+      router.refresh()
+    })
   }
 
   return (
-    <Button onClick={logout} variant="destructive">
-      ログアウト
+    <Button
+      {...props}
+      type="button"
+      className={className}
+      disabled={disabled || isPending}
+      onClick={logout}
+      size={size}
+      variant={variant}
+    >
+      {children ?? (
+        <>
+          <LogOut className="size-4" />
+          {isPending ? "ログアウト中..." : "ログアウト"}
+        </>
+      )}
     </Button>
   )
 }
