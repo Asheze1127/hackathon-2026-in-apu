@@ -150,8 +150,8 @@ INDEX: `type`, `name`
 | `abstract_question_id` | UUID | FK → `abstract_questions.id` NULLABLE | このノードに付属する抽象質問（任意） |
 | `concrete_answer` | TEXT | NOT NULL | 具体質問へのユーザーの回答（例：「大企業に就職した」） |
 | `abstract_answer` | TEXT | | 抽象質問へのユーザーの回答（例：「安定を求めていた」） |
-| `real_tags` | JSONB | NOT NULL DEFAULT '[]' | 事実ベースのタグ ID 配列（例：`["uuid-1", "uuid-2"]`） |
-| `emotional_tags` | JSONB | NOT NULL DEFAULT '[]' | 感情・価値観ベースのタグ ID 配列 |
+| `real_tags` | JSONB | NOT NULL DEFAULT '[]' | 事実ベースのタグ ID 配列（例：`["uuid-1", "uuid-2"]`）。タグ名ではなく `tags.id` を保持する |
+| `emotional_tags` | JSONB | NOT NULL DEFAULT '[]' | 感情・価値観ベースのタグ ID 配列。タグ名表示時は `tags` テーブルを参照する |
 | `visual_state` | VARCHAR | | 3D 可視化用の状態値（色・感情等を文字列で保持） |
 | `parent_id` | UUID | FK → `nodes.id` NULLABLE | 親ノードの ID。NULL = 木のルート |
 | `created_at` | TIMESTAMP | NOT NULL | |
@@ -162,7 +162,7 @@ INDEX: `user_id`, `parent_id`, `real_tags`（GIN）, `emotional_tags`（GIN）
 
 ## 4. タグ検索のクエリイメージ
 
-### emotionalTag が部分一致する他ユーザーのノードを取得
+### emotionalTag が1件以上共通する他ユーザーのノードを取得
 
 ```sql
 -- 自分の emotional_tags と1つ以上一致する他人のノードを取得
@@ -174,6 +174,34 @@ ORDER BY n.created_at DESC
 ```
 
 GIN インデックスにより高速に検索できる。
+
+ここでいう検索は文字列の部分一致ではなく、タグ ID 集合の重なり検索。
+`nodes` にはタグ名ではなく `tags.id` の UUID を保持するため、タグ名変更や表記ゆれの影響を受けない。
+
+### タグ名で部分一致検索してからノードを取得
+
+タグ名の文字列検索が必要な場合は、`nodes` を直接 `LIKE` 検索しない。
+先に `tags` を検索して `id` を引き、その UUID 群で `nodes` を検索する。
+
+```sql
+WITH matched_tags AS (
+  SELECT id
+  FROM tags
+  WHERE name ILIKE '%大学%'
+)
+SELECT n.*
+FROM nodes n
+WHERE n.real_tags ?| (
+  SELECT array_agg(id::text)
+  FROM matched_tags
+)
+ORDER BY n.created_at DESC;
+```
+
+つまり検索経路は次の2種類を使い分ける。
+
+- ノード同士の類似検索: `real_tags` / `emotional_tags` の UUID 配列同士の重なりを見る
+- タグ名検索: `tags.name` を検索してから `tags.id` で `nodes` を絞り込む
 
 ---
 

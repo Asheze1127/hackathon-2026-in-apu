@@ -1,6 +1,6 @@
 /**
  * Server-only AI client. Call from Server Actions only.
- * Buffers between OpenRouter (GPT-OSS-120B) and campus GPT-OSS-120B.
+ * Buffers between OpenRouter, Gemini, and campus GPT-OSS.
  */
 
 import type {
@@ -12,10 +12,13 @@ import type {
 } from "./types"
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+const GEMINI_URL =
+  "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 const CAMPUS_GENERATE_PATH = "/api/generate"
 
 // Default model: free tier; use openai/gpt-oss-120b for paid ($10 credit)
 const DEFAULT_OPENROUTER_MODEL = "openai/gpt-oss-120b:free"
+const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 const DEFAULT_CAMPUS_MODEL = "gpt-oss:120b"
 
 function getOpenRouterModel(): string {
@@ -24,6 +27,14 @@ function getOpenRouterModel(): string {
 
 function getOpenRouterKey(): string | undefined {
   return process.env.OPENROUTER_API_KEY
+}
+
+function getGeminiModel(): string {
+  return process.env.GEMINI_MODEL ?? DEFAULT_GEMINI_MODEL
+}
+
+function getGeminiKey(): string | undefined {
+  return process.env.GEMINI_API_KEY
 }
 
 function getCampusBaseUrl(): string | undefined {
@@ -83,9 +94,19 @@ type ChatCompletionOptions = Omit<
 
 interface CampusGenerateResponse {
   response?: string
+  thinking?: string
   done?: boolean
+  done_reason?: string
   prompt_eval_count?: number
   eval_count?: number
+}
+
+function getCampusThinkLevel(): "low" | "medium" | "high" {
+  const value = process.env.CAMPUS_AI_THINK?.trim().toLowerCase()
+  if (value === "medium" || value === "high") {
+    return value
+  }
+  return "low"
 }
 
 function decodeHtmlEntities(text: string): string {
@@ -169,6 +190,7 @@ function buildCampusBody(
 ): Record<string, unknown> {
   const { prompt, system } = buildCampusPrompt(messages)
   const generationOptions: Record<string, unknown> = {}
+  const model = getCampusModel(options.model)
 
   if (typeof options.max_tokens === "number") {
     generationOptions.num_predict = options.max_tokens
@@ -178,9 +200,13 @@ function buildCampusBody(
   }
 
   const body: Record<string, unknown> = {
-    model: getCampusModel(options.model),
+    model,
     prompt,
     stream: false,
+  }
+
+  if (model.toLowerCase().includes("gpt-oss")) {
+    body.think = getCampusThinkLevel()
   }
 
   if (system) {
@@ -220,10 +246,11 @@ function normalizeCampusResult(
     choices: [
       {
         index: 0,
-        finish_reason: response.done ? "stop" : null,
+        finish_reason: response.done_reason ?? (response.done ? "stop" : null),
         message: {
           role: "assistant",
           content: normalizeCampusText(response.response ?? ""),
+          thinking: response.thinking ?? null,
         },
       },
     ],
@@ -297,6 +324,37 @@ async function callOpenRouter(
   return data
 }
 
+async function callGemini(
+  messages: ChatMessage[],
+  options: ChatCompletionOptions
+): Promise<CreateChatCompletionResult> {
+  const key = getGeminiKey()
+  if (!key) {
+    throw new Error("GEMINI_API_KEY is not set")
+  }
+  const body = buildOpenRouterBody(messages, {
+    model: options.model ?? getGeminiModel(),
+    tools: options.tools,
+    tool_choice: options.tool_choice,
+    max_tokens: options.max_tokens,
+    temperature: options.temperature,
+  })
+  const res = await fetch(GEMINI_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    throw new Error(`Gemini API error: ${res.status} ${text}`)
+  }
+  const data = (await res.json()) as CreateChatCompletionResult
+  return data
+}
+
 async function callCampus(
   messages: ChatMessage[],
   options: ChatCompletionOptions
@@ -359,6 +417,9 @@ export async function createChatCompletion(
   }
   if (provider === "campus") {
     return callCampus(messages, options)
+  }
+  if (provider === "gemini") {
+    return callGemini(messages, options)
   }
   throw new Error(`Unknown AI provider: ${provider}`)
 }

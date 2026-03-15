@@ -1,6 +1,6 @@
 /**
  * OpenAI-compatible types for chat completions.
- * Shared by OpenRouter and campus backend so hooks can use the same interface.
+ * Shared by OpenRouter, Gemini, and campus backend so hooks can use the same interface.
  */
 
 export type ChatRole = "system" | "user" | "assistant" | "tool"
@@ -8,6 +8,8 @@ export type ChatRole = "system" | "user" | "assistant" | "tool"
 export interface ChatMessage {
   role: ChatRole
   content: string | null
+  /** Present when provider exposes separate reasoning text. */
+  thinking?: string | null
   /** Present when model returns tool calls (assistant message). */
   tool_calls?: ToolCall[]
   /** Present when submitting tool results (tool role). */
@@ -41,7 +43,7 @@ export type ToolChoice =
   | "auto"
   | { type: "function"; function: { name: string } }
 
-export type AiProvider = "openrouter" | "campus"
+export type AiProvider = "openrouter" | "gemini" | "campus"
 
 export interface CreateChatCompletionParams {
   provider: AiProvider
