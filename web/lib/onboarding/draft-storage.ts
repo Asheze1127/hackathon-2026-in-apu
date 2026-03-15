@@ -4,6 +4,9 @@ import type { OnboardingQuestionInput } from "@/lib/onboarding/form-schema"
 
 const ONBOARDING_QUESTION_DRAFT_KEY = "onboarding-question-draft"
 
+let _cachedRaw: string | null = null
+let _cachedParsed: OnboardingQuestionInput | null = null
+
 export function readOnboardingQuestionDraft(): OnboardingQuestionInput | null {
   if (typeof window === "undefined") {
     return null
@@ -11,13 +14,23 @@ export function readOnboardingQuestionDraft(): OnboardingQuestionInput | null {
 
   const rawValue = window.sessionStorage.getItem(ONBOARDING_QUESTION_DRAFT_KEY)
   if (!rawValue) {
+    _cachedRaw = null
+    _cachedParsed = null
     return null
   }
 
+  if (rawValue === _cachedRaw) {
+    return _cachedParsed
+  }
+
   try {
-    return JSON.parse(rawValue) as OnboardingQuestionInput
+    _cachedRaw = rawValue
+    _cachedParsed = JSON.parse(rawValue) as OnboardingQuestionInput
+    return _cachedParsed
   } catch {
     window.sessionStorage.removeItem(ONBOARDING_QUESTION_DRAFT_KEY)
+    _cachedRaw = null
+    _cachedParsed = null
     return null
   }
 }
@@ -39,4 +52,6 @@ export function clearOnboardingQuestionDraft() {
   }
 
   window.sessionStorage.removeItem(ONBOARDING_QUESTION_DRAFT_KEY)
+  _cachedRaw = null
+  _cachedParsed = null
 }
