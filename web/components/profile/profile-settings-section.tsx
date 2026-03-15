@@ -59,6 +59,7 @@ export function ProfileSettingsSection({
       <Field data-invalid={Boolean(errors?.displayName)}>
         <FieldLabel htmlFor="profile-display-name" className="font-bold">
           名前
+          <span className="ml-1 text-destructive">*</span>
         </FieldLabel>
         <FieldDescription>
           他のユーザーから見える表示名です。オンボーディングでは必須です。

@@ -113,7 +113,7 @@ export function ProfileAvatarDropzone({
                 }}
               />
             ) : (
-              <div className="flex size-full items-center justify-center bg-[radial-gradient(circle_at_top,#dce9ff,transparent_60%),linear-gradient(135deg,#f7f8fb,#eef1f6)] text-muted-foreground">
+              <div className="flex size-full items-center justify-center bg-muted text-muted-foreground">
                 <ImagePlus className="size-7" />
               </div>
             )}
