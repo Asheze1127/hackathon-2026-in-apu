@@ -15,10 +15,6 @@ export default async function ChatPage() {
   return (
     <PageLayout className="pb-28">
       <section className="space-y-4">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-card px-4 py-2 text-sm text-muted-foreground">
-          <MessageCircle className="size-4" />
-          room based chat
-        </div>
         <div className="space-y-3">
           <h1 className="text-4xl font-bold tracking-tight">チャット</h1>
           <p className="max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
