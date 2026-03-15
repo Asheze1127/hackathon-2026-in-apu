@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { Controller, useForm } from "react-hook-form"
 import * as z from "zod"
 
-import { submitOnboardingForm } from "@/app/(main)/onboarding/actions"
+import { submitOnboardingForm } from "@/app/(main)/(onboarding)/onboarding/actions"
 
 import { Button } from "@/components/ui/button"
 import {

@@ -10,7 +10,8 @@
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
-    "prepare": "cd .. && husky web/.husky"
+    "prepare": "cd .. && husky web/.husky",
+    "supabase:types": "supabase gen types typescript --project-id vnejrbqnpsrrrossrafy > lib/supabase/database.types.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
