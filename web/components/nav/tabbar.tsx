@@ -2,11 +2,13 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, Settings } from "lucide-react"
+import { Home, MessageCircle, Star, User } from "lucide-react"
 
 const tabs = [
   { label: "ホーム", href: "/", icon: Home },
-  { label: "設定", href: "/settings", icon: Settings },
+  { label: "チャット", href: "/chat", icon: MessageCircle },
+  { label: "ロールモデル", href: "/rolemodel", icon: Star },
+  { label: "プロフィール", href: "/profile", icon: User },
 ]
 
 export function GraphTabBar() {
@@ -27,8 +29,13 @@ export function GraphTabBar() {
                   : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
               }`}
             >
-              <Icon size={15} />
-              {label}
+              <span className="md:hidden">
+                <Icon size={20} />
+              </span>
+              <span className="flex items-center gap-1 max-md:hidden">
+                <Icon size={15} />
+                {label}
+              </span>
             </Link>
           )
         })}

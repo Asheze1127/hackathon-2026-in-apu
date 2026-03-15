@@ -1,0 +1,132 @@
+// Decision Path - Prisma Schema
+// DB: Supabase (PostgreSQL)
+// Auth: Supabase Auth (auth.users)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// auth.users の拡張。アプリ固有情報のみ持つ。
+model Profile {
+  id                String   @id @db.Uuid // auth.users.id と同値
+  displayName       String?  @map("display_name") @db.VarChar(50) // User-visible display name
+  goal              String?  @db.Text // ユーザーの最終目標
+  avatarUrl         String?  @map("avatar_url") @db.Text // Profile avatar image URL
+  currentOccupation String?  @map("current_occupation") @db.Text // Current occupation shown on the profile
+  age               Int?     @db.SmallInt // User-entered age for profile display
+  location          String?  @db.Text // Current place of residence shown on the profile
+  onboarded         Boolean  @default(false) // 初回アンケート完了フラグ
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  nodes            Node[]
+  chatRoomsCreated ChatRoom[]       @relation("ChatRoomCreator")
+  chatRoomMembers  ChatRoomMember[]
+  messages         Message[]
+
+  @@map("profiles")
+}
+
+// realTag・emotionalTag で共通利用するタグマスタ。運営がシードで投入。
+model Tag {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(100) // タグ名（例：大学進学、挑戦）
+  type        String   @db.VarChar(20) // "real" | "emotional"
+  description String?  @db.Text // タグの説明
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([type])
+  @@index([name])
+  @@map("tags")
+}
+
+// 意思決定の背景・価値観を引き出す抽象的な質問マスタ。運営がシードで投入。
+model AbstractQuestion {
+  id          String   @id @default(uuid()) @db.Uuid
+  question    String   @db.Text // 質問文
+  description String?  @db.Text // 質問文を生成した理由などを入れる。
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  nodes Node[]
+
+  @@map("abstract_questions")
+}
+
+// ユーザーの意思決定ログ。1レコード = 木の1ノード。parent_id で親子関係を表現する。
+// 具体質問は「今何をしていますか？」の固定1問のためマスタテーブルは持たない。抽象質問は AbstractQuestion を参照。
+// real_tags / emotional_tags は Tag.id の UUID 配列を JSONB で保持。
+// GIN インデックスは Supabase SQL エディタで別途作成すること:
+//   CREATE INDEX idx_nodes_real_tags ON nodes USING GIN (real_tags);
+//   CREATE INDEX idx_nodes_emotional_tags ON nodes USING GIN (emotional_tags);
+model Node {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String   @map("user_id") @db.Uuid // ノードの所有者（RLS で制御）
+  abstractQuestionId String?  @map("abstract_question_id") @db.Uuid // 付属する抽象質問（任意）
+  concreteAnswer     String   @map("concrete_answer") @db.Text // 「今何をしていますか？」への回答
+  abstractAnswer     String?  @map("abstract_answer") @db.Text // 抽象質問への回答
+  realTags           Json     @default("[]") @map("real_tags") // 事実タグ ID 配列
+  emotionalTags      Json     @default("[]") @map("emotional_tags") // 感情タグ ID 配列（類似ユーザー検索に使用）
+  visualState        String?  @map("visual_state") @db.VarChar(50) // 3D 可視化用の状態値（P3）
+  parentId           String?  @map("parent_id") @db.Uuid // 親ノード ID。NULL = ルート
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  profile          Profile           @relation(fields: [userId], references: [id])
+  abstractQuestion AbstractQuestion? @relation(fields: [abstractQuestionId], references: [id])
+  parent           Node?             @relation("NodeTree", fields: [parentId], references: [id])
+  children         Node[]            @relation("NodeTree")
+
+  @@index([userId])
+  @@index([parentId])
+  @@map("nodes")
+}
+
+model ChatRoom {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.Text
+  roomType  String   @map("room_type") @db.VarChar(20)
+  createdBy String   @map("created_by") @db.Uuid
+  goal      String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  creator  Profile          @relation("ChatRoomCreator", fields: [createdBy], references: [id])
+  members  ChatRoomMember[]
+  messages Message[]
+
+  @@index([roomType])
+  @@index([goal])
+  @@index([createdBy])
+  @@map("chat_rooms")
+}
+
+model ChatRoomMember {
+  roomId   String   @map("room_id") @db.Uuid
+  userId   String   @map("user_id") @db.Uuid
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  room ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, userId])
+  @@index([userId])
+  @@map("chat_room_members")
+}
+
+model Message {
+  id        String   @id @default(uuid()) @db.Uuid
+  roomId    String   @map("room_id") @db.Uuid
+  senderId  String   @map("sender_id") @db.Uuid
+  content   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  room   ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender Profile  @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, createdAt])
+  @@index([senderId])
+  @@map("messages")
+}
