@@ -56,7 +56,7 @@ const text = result.choices[0]?.message.content ?? ""
 OPENROUTER_API_KEY=
 OPENROUTER_MODEL=openai/gpt-oss-120b:free
 
-CAMPUS_AI_BASE_URL=https://aisvr221.aikb.kyutech.ac.jp
+CAMPUS_AI_BASE_URL=
 CAMPUS_AI_API_KEY=
 CAMPUS_AI_MODEL=gpt-oss:120b
 ```
