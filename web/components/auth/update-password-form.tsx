@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { defaultPatterns } from "web-haptics"
+import { useWebHaptics } from "web-haptics/react"
 
 export function UpdatePasswordForm({
   className,
@@ -23,6 +25,7 @@ export function UpdatePasswordForm({
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const { trigger } = useWebHaptics()
   const router = useRouter()
 
   const handleForgotPassword = async (e: React.FormEvent) => {
@@ -34,10 +37,12 @@ export function UpdatePasswordForm({
     try {
       const { error } = await supabase.auth.updateUser({ password })
       if (error) throw error
+      await trigger(defaultPatterns.success)
       // Update this route to redirect to an authenticated route. The user already has an active session.
       router.push("/")
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "エラーが発生しました")
+      await trigger(defaultPatterns.error)
     } finally {
       setIsLoading(false)
     }
@@ -67,7 +72,14 @@ export function UpdatePasswordForm({
                 />
               </div>
               {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isLoading}
+                onClick={() => {
+                  void trigger(defaultPatterns.selection)
+                }}
+              >
                 {isLoading ? "保存中..." : "新しいパスワードを保存"}
               </Button>
             </div>

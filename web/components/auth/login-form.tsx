@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { useState } from "react"
+import Link from "next/link"
 
 import { cn } from "@/lib/utils"
 import { createClient } from "@/lib/supabase/client"
@@ -15,7 +16,8 @@ import {
 } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import Link from "next/link"
+import { defaultPatterns } from "web-haptics"
+import { useWebHaptics } from "web-haptics/react"
 
 export function LoginForm({
   className,
@@ -25,6 +27,7 @@ export function LoginForm({
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const { trigger } = useWebHaptics()
   const router = useRouter()
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -39,10 +42,12 @@ export function LoginForm({
         password,
       })
       if (error) throw error
+      await trigger(defaultPatterns.success)
       // Update this route to redirect to an authenticated route. The user already has an active session.
       router.push("/")
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "An error occurred")
+      await trigger(defaultPatterns.error)
     } finally {
       setIsLoading(false)
     }
@@ -92,9 +97,11 @@ export function LoginForm({
               {error && <p className="text-sm text-red-500">{error}</p>}
               <Button
                 type="submit"
-                variant=""
                 className="w-full"
                 disabled={isLoading}
+                onClick={() => {
+                  void trigger(defaultPatterns.selection)
+                }}
               >
                 {isLoading ? "ログイン中..." : "ログイン"}
               </Button>

@@ -16,6 +16,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
+import { defaultPatterns } from "web-haptics"
+import { useWebHaptics } from "web-haptics/react"
 
 export function SignUpForm({
   className,
@@ -26,6 +28,7 @@ export function SignUpForm({
   const [repeatPassword, setRepeatPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const { trigger } = useWebHaptics()
   const router = useRouter()
 
   const handleSignUp = async (e: React.FormEvent) => {
@@ -36,6 +39,7 @@ export function SignUpForm({
 
     if (password !== repeatPassword) {
       setError("パスワードが一致しません")
+      await trigger(defaultPatterns.error)
       setIsLoading(false)
       return
     }
@@ -49,9 +53,11 @@ export function SignUpForm({
         },
       })
       if (error) throw error
+      await trigger(defaultPatterns.success)
       router.push("/")
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "エラーが発生しました")
+      await trigger(defaultPatterns.error)
     } finally {
       setIsLoading(false)
     }
@@ -103,7 +109,14 @@ export function SignUpForm({
                 />
               </div>
               {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isLoading}
+                onClick={() => {
+                  void trigger(defaultPatterns.selection)
+                }}
+              >
                 {isLoading ? "アカウント作成中..." : "新規登録"}
               </Button>
             </div>
