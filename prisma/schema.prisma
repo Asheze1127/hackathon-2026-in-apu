@@ -7,9 +7,7 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
 }
 
 // auth.users の拡張。アプリ固有情報のみ持つ。
@@ -41,7 +39,7 @@ model Tag {
 model AbstractQuestion {
   id          String   @id @default(uuid()) @db.Uuid
   question    String   @db.Text                   // 質問文
-  description String?  @db.Text                   // 回答のヒント
+  description String?  @db.Text                   // 質問文を生成した理由などを入れる。
   createdAt   DateTime @default(now()) @map("created_at")
 
   nodes Node[]
