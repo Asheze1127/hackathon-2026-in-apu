@@ -70,7 +70,6 @@ erDiagram
         jsonb emotional_tags
         varchar visual_state
         uuid parent_id FK
-        int sequence_order
         timestamp created_at
     }
 
@@ -155,7 +154,6 @@ INDEX: `type`, `name`
 | `emotional_tags` | JSONB | NOT NULL DEFAULT '[]' | 感情・価値観ベースのタグ ID 配列 |
 | `visual_state` | VARCHAR | | 3D 可視化用の状態値（色・感情等を文字列で保持） |
 | `parent_id` | UUID | FK → `nodes.id` NULLABLE | 親ノードの ID。NULL = 木のルート |
-| `sequence_order` | INT | NOT NULL DEFAULT 0 | 同一親ノード内での表示順 |
 | `created_at` | TIMESTAMP | NOT NULL | |
 
 INDEX: `user_id`, `parent_id`, `real_tags`（GIN）, `emotional_tags`（GIN）
