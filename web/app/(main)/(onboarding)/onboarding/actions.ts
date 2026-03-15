@@ -1,51 +1,18 @@
 "use server"
 
-import { ZodError } from "zod"
-
 import {
   formSchema,
   type OnboardingFormInput,
 } from "@/lib/onboarding/form-schema"
+import { AppActionError, mapUnknownToAppActionError } from "@/lib/errors"
 import prisma from "@/lib/prisma/client"
 import { createClient } from "@/lib/supabase/server"
-
-class OnboardingActionError extends Error {
-  constructor(
-    public readonly code:
-      | "VALIDATION_ERROR"
-      | "UNAUTHORIZED"
-      | "PROFILE_NOT_FOUND"
-      | "INTERNAL_ERROR",
-    message: string
-  ) {
-    super(message)
-    this.name = "OnboardingActionError"
-  }
-}
 
 function normalizeInput(input: OnboardingFormInput) {
   return {
     concreteAnswer: input.present.trim(),
     abstractAnswer: input.reason?.trim() || null,
   }
-}
-
-function mapError(error: unknown): OnboardingActionError {
-  if (error instanceof OnboardingActionError) {
-    return error
-  }
-
-  if (error instanceof ZodError) {
-    return new OnboardingActionError(
-      "VALIDATION_ERROR",
-      "オンボーディング入力が不正です。"
-    )
-  }
-
-  return new OnboardingActionError(
-    "INTERNAL_ERROR",
-    "オンボーディングの保存に失敗しました。"
-  )
 }
 
 export async function submitOnboardingForm(data: unknown) {
@@ -59,7 +26,7 @@ export async function submitOnboardingForm(data: unknown) {
 
   if (!user) {
     console.warn("[onboarding] unauthorized access")
-    throw new OnboardingActionError("UNAUTHORIZED", "認証が必要です。")
+    throw new AppActionError("UNAUTHORIZED", "認証が必要です。")
   }
 
   try {
@@ -70,7 +37,7 @@ export async function submitOnboardingForm(data: unknown) {
       })
 
       if (!profile) {
-        throw new OnboardingActionError(
+        throw new AppActionError(
           "PROFILE_NOT_FOUND",
           "プロフィールが見つかりません。"
         )
@@ -119,7 +86,10 @@ export async function submitOnboardingForm(data: unknown) {
 
     return result
   } catch (error) {
-    const mappedError = mapError(error)
+    const mappedError = mapUnknownToAppActionError(
+      error,
+      "オンボーディングの保存に失敗しました。"
+    )
 
     console.error("[onboarding] failed", {
       userId: user.id,
