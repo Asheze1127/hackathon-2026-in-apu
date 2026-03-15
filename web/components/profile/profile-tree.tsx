@@ -1,11 +1,12 @@
 "use client"
 
-import type { RoleModel } from "@/lib/profile-data"
+import type { Edge } from "@xyflow/react"
+import type { CircleNode } from "@/components/circle-node"
 import { ProfileGraph } from "./profile-graph"
 
 interface ProfileTreeProps {
-  nodes: RoleModel["profileNodes"]
-  edges: RoleModel["profileEdges"]
+  nodes: CircleNode[]
+  edges: Edge[]
 }
 
 export function ProfileTree({ nodes, edges }: ProfileTreeProps) {

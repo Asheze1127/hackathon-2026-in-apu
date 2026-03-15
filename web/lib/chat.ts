@@ -1,10 +1,12 @@
 import "server-only"
 
+import prisma from "@/lib/prisma/client"
 import { createClient, getProfile } from "@/lib/supabase/server"
 import {
-  ChatMessage,
-  ChatRoom,
-  ChatRoomSummary,
+  type ChatMessage,
+  type ChatPeerProfile,
+  type ChatRoom,
+  type ChatRoomSummary,
   CHAT_ROOM_TYPES,
 } from "@/lib/chat-shared"
 
@@ -17,6 +19,74 @@ async function ensureRoomMembership(roomId: string, userId: string) {
 
   if (error && error.code !== "23505") {
     throw new Error(error.message)
+  }
+}
+
+function toChatMessage(message: {
+  id: string
+  roomId: string
+  senderId: string
+  content: string
+  createdAt: Date
+}): ChatMessage {
+  return {
+    content: message.content,
+    created_at: message.createdAt.toISOString(),
+    id: message.id,
+    room_id: message.roomId,
+    sender_id: message.senderId,
+  }
+}
+
+function toPeerProfile(profile: {
+  id: string
+  displayName: string | null
+  avatarUrl: string | null
+  currentOccupation: string | null
+}): ChatPeerProfile {
+  return {
+    avatar_url: profile.avatarUrl,
+    current_occupation: profile.currentOccupation,
+    display_name: profile.displayName,
+    id: profile.id,
+  }
+}
+
+function resolveChatRoom(
+  room: {
+    id: string
+    name: string
+    roomType: string
+    createdBy: string
+    goal: string | null
+    createdAt: Date
+    members: Array<{
+      userId: string
+      user: {
+        id: string
+        displayName: string | null
+        avatarUrl: string | null
+        currentOccupation: string | null
+      }
+    }>
+  },
+  currentUserId: string
+): ChatRoom {
+  const peerMember =
+    room.members.find((member) => member.userId !== currentUserId) ?? null
+  const peerProfile = peerMember ? toPeerProfile(peerMember.user) : null
+
+  return {
+    created_at: room.createdAt.toISOString(),
+    created_by: room.createdBy,
+    goal: room.goal,
+    id: room.id,
+    name: room.name,
+    peerProfile,
+    resolvedName:
+      peerProfile?.display_name?.trim() || room.name || "チャットルーム",
+    resolvedSubtitle: peerProfile?.current_occupation?.trim() || room.goal,
+    room_type: room.roomType,
   }
 }
 
@@ -130,6 +200,7 @@ export async function ensureChatRoomsForCurrentUser() {
     .select("id")
     .eq("room_type", CHAT_ROOM_TYPES.dmModel)
     .eq("created_by", user.id)
+    .eq("name", "Decision Path Mentor")
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle()
@@ -165,6 +236,73 @@ export async function getOrCreateModelChatRoomForCurrentUser(roomName: string) {
   return ensureDmModelRoom(user.id, normalizedGoal, roomName)
 }
 
+export async function getOrCreateUserDmRoomForCurrentUser(
+  targetUserId: string
+) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user || user.id === targetUserId) {
+    return null
+  }
+
+  const targetProfile = await prisma.profile.findUnique({
+    where: { id: targetUserId },
+    select: {
+      id: true,
+      displayName: true,
+      onboarded: true,
+    },
+  })
+
+  if (!targetProfile?.onboarded) {
+    return null
+  }
+
+  const existingRoom = await prisma.chatRoom.findFirst({
+    where: {
+      roomType: CHAT_ROOM_TYPES.dmModel,
+      members: {
+        some: {
+          userId: user.id,
+        },
+      },
+      AND: [
+        {
+          members: {
+            some: {
+              userId: targetUserId,
+            },
+          },
+        },
+      ],
+    },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  })
+
+  if (existingRoom) {
+    return existingRoom.id
+  }
+
+  const room = await prisma.chatRoom.create({
+    data: {
+      createdBy: user.id,
+      goal: null,
+      name: "1対1のDM",
+      roomType: CHAT_ROOM_TYPES.dmModel,
+      members: {
+        create: [{ userId: user.id }, { userId: targetUserId }],
+      },
+    },
+    select: { id: true },
+  })
+
+  return room.id
+}
+
 export async function listChatRoomsForCurrentUser(): Promise<
   ChatRoomSummary[]
 > {
@@ -177,48 +315,53 @@ export async function listChatRoomsForCurrentUser(): Promise<
     return []
   }
 
-  const { data: memberships, error: membershipsError } = await supabase
-    .from("chat_room_members")
-    .select(
-      "room_id, chat_rooms!inner(id, name, room_type, created_by, goal, created_at)"
-    )
-    .eq("user_id", user.id)
-
-  if (membershipsError) {
-    throw new Error(membershipsError.message)
-  }
-
-  const rooms = memberships
-    .map((membership) => membership.chat_rooms)
-    .filter((room): room is ChatRoom => Boolean(room))
-
-  if (rooms.length === 0) {
-    return []
-  }
-
-  const roomIds = rooms.map((room) => room.id)
-
-  const { data: messages, error: messagesError } = await supabase
-    .from("messages")
-    .select("id, room_id, sender_id, content, created_at")
-    .in("room_id", roomIds)
-    .order("created_at", { ascending: false })
-
-  if (messagesError) {
-    throw new Error(messagesError.message)
-  }
-
-  const latestByRoom = new Map<string, ChatMessage>()
-  for (const message of messages) {
-    if (!latestByRoom.has(message.room_id)) {
-      latestByRoom.set(message.room_id, message)
-    }
-  }
+  const rooms = await prisma.chatRoom.findMany({
+    where: {
+      members: {
+        some: {
+          userId: user.id,
+        },
+      },
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      name: true,
+      roomType: true,
+      createdBy: true,
+      goal: true,
+      createdAt: true,
+      members: {
+        select: {
+          userId: true,
+          user: {
+            select: {
+              id: true,
+              displayName: true,
+              avatarUrl: true,
+              currentOccupation: true,
+            },
+          },
+        },
+      },
+      messages: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        select: {
+          id: true,
+          roomId: true,
+          senderId: true,
+          content: true,
+          createdAt: true,
+        },
+      },
+    },
+  })
 
   return rooms
     .map((room) => ({
-      ...room,
-      latestMessage: latestByRoom.get(room.id) ?? null,
+      ...resolveChatRoom(room, user.id),
+      latestMessage: room.messages[0] ? toChatMessage(room.messages[0]) : null,
       unreadCount: 0,
     }))
     .sort((left, right) => {
@@ -241,37 +384,57 @@ export async function getChatRoomForCurrentUser(roomId: string) {
     return null
   }
 
-  const { data: membership, error } = await supabase
-    .from("chat_room_members")
-    .select(
-      "chat_rooms!inner(id, name, room_type, created_by, goal, created_at)"
-    )
-    .eq("room_id", roomId)
-    .eq("user_id", user.id)
-    .maybeSingle()
+  const room = await prisma.chatRoom.findFirst({
+    where: {
+      id: roomId,
+      members: {
+        some: {
+          userId: user.id,
+        },
+      },
+    },
+    select: {
+      id: true,
+      name: true,
+      roomType: true,
+      createdBy: true,
+      goal: true,
+      createdAt: true,
+      members: {
+        select: {
+          userId: true,
+          user: {
+            select: {
+              id: true,
+              displayName: true,
+              avatarUrl: true,
+              currentOccupation: true,
+            },
+          },
+        },
+      },
+    },
+  })
 
-  if (error) {
-    if (error.code === "PGRST116") {
-      return null
-    }
-    throw new Error(error.message)
+  if (!room) {
+    return null
   }
 
-  return membership?.chat_rooms ?? null
+  return resolveChatRoom(room, user.id)
 }
 
 export async function listMessagesForRoom(roomId: string) {
-  const supabase = await createClient()
+  const messages = await prisma.message.findMany({
+    where: { roomId },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      roomId: true,
+      senderId: true,
+      content: true,
+      createdAt: true,
+    },
+  })
 
-  const { data: messages, error } = await supabase
-    .from("messages")
-    .select("id, room_id, sender_id, content, created_at")
-    .eq("room_id", roomId)
-    .order("created_at", { ascending: true })
-
-  if (error) {
-    throw new Error(error.message)
-  }
-
-  return messages
+  return messages.map((message) => toChatMessage(message))
 }

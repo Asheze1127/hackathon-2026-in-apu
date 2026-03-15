@@ -1,25 +1,48 @@
 import { notFound, redirect } from "next/navigation"
 
-import { getOrCreateModelChatRoomForCurrentUser } from "@/lib/chat"
-import { ROLE_MODELS } from "@/lib/profile-data"
+import { RoleModelAiChatView } from "@/components/chat/rolemodel-ai-chat-view"
+import { AppActionError } from "@/lib/errors"
+import { getRoleModelChatPersona } from "@/lib/rolemodel-chat"
+import { createClient } from "@/lib/supabase/server"
 
-export default async function ModelChatRedirectPage({
+export default async function RoleModelAiChatPage({
   params,
 }: {
   params: Promise<{ uid: string }>
 }) {
   const { uid } = await params
-  const model = ROLE_MODELS[uid]
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
 
-  if (!model) {
-    notFound()
+  if (!user) {
+    redirect("/auth/login")
   }
 
-  const roomId = await getOrCreateModelChatRoomForCurrentUser(model.name)
-
-  if (!roomId) {
-    notFound()
+  if (uid === user.id) {
+    redirect("/profile")
   }
 
-  redirect(`/chat/${roomId}`)
+  let persona
+  try {
+    persona = await getRoleModelChatPersona(uid)
+  } catch (error) {
+    if (error instanceof AppActionError && error.code === "PROFILE_NOT_FOUND") {
+      notFound()
+    }
+
+    throw error
+  }
+
+  return (
+    <RoleModelAiChatView
+      currentOccupation={persona.currentOccupation}
+      displayName={persona.displayName}
+      introMessage={persona.introMessage}
+      introTimestamp={new Date().toISOString()}
+      profileHref={persona.profileHref}
+      targetUserId={persona.id}
+    />
+  )
 }

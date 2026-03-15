@@ -22,7 +22,7 @@ export default async function ChatPage() {
         <div className="space-y-3">
           <h1 className="text-4xl font-bold tracking-tight">チャット</h1>
           <p className="max-w-xl text-sm leading-relaxed text-muted-foreground sm:text-base">
-            ロールモデルとの 1 対 1 と、同じ goal を持つコミュニティを同じ room
+            ユーザーとの 1 対 1 と、同じ goal を持つコミュニティを同じ room
             構造で扱います。
           </p>
         </div>

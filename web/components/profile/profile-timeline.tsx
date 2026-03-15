@@ -1,18 +1,36 @@
+import Link from "next/link"
 import { Bot, ArrowRight } from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import type { TimelineItem } from "@/lib/profile-data"
+
+interface TimelineItem {
+  Icon: LucideIcon
+  dotClass: string
+  dotIconColor: string
+  date: string
+  dateClass: string
+  DateIcon: LucideIcon
+  title: string
+  body: string
+  choice: string | null
+  choiceClass: string
+  choiceDotClass: string
+  choiceTextClass: string
+  cardClass: string
+  hasLine: boolean
+}
 
 interface ProfileTimelineProps {
+  aiChatHref: string
   name: string
   timelineItems: TimelineItem[]
-  onStartChat: () => void
 }
 
 export function ProfileTimeline({
+  aiChatHref,
   name,
   timelineItems,
-  onStartChat,
 }: ProfileTimelineProps) {
   return (
     <div className="flex flex-col gap-0">
@@ -78,11 +96,13 @@ export function ProfileTimeline({
         <div className="min-w-0 flex-1">
           <div className="text-sm font-bold">{name}さんに相談してみよう</div>
           <div className="mt-0.5 text-xs text-muted-foreground">
-            キャリアの選択理由や悩みをチャットで相談できます。
+            木構造をもとにした AI 擬似人格と、選択理由や悩みを相談できます。
           </div>
         </div>
-        <Button size="sm" onClick={onStartChat} className="shrink-0 gap-1">
-          DMへ <ArrowRight size={13} />
+        <Button asChild size="sm" className="shrink-0 gap-1">
+          <Link href={aiChatHref}>
+            相談する <ArrowRight size={13} />
+          </Link>
         </Button>
       </div>
     </div>

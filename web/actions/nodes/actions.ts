@@ -6,16 +6,21 @@ import {
   type ActionResponse,
   mapUnknownToErrorResponse,
 } from "@/lib/errors"
+import { classifyNodeTags } from "@/lib/nodes/tagging"
 import prisma from "@/lib/prisma/client"
 import { createClient } from "@/lib/supabase/server"
+import { listUserTreeNodes } from "@/lib/user-tree"
 
 const MAX_ANSWER_LENGTH = 500
 const DEFAULT_ABSTRACT_QUESTION = "なぜそれをしていますか？"
+const MAX_FUTURE_SUGGESTION_DEPTH = 3
+const MAX_FUTURE_SUGGESTION_BRANCHES = 5
 const mutateModeSchema = z.enum(["append", "insert-between", "prepend-root"])
 
 const addNodeSchema = z.object({
   mutateMode: mutateModeSchema,
   parentId: z.string().uuid().nullable(),
+  targetChildId: z.string().uuid().optional(),
   concreteAnswer: z.string().trim().min(1).max(MAX_ANSWER_LENGTH),
   abstractAnswer: z.string().trim().max(MAX_ANSWER_LENGTH).optional(),
 })
@@ -96,6 +101,91 @@ export interface GetUserTreeResult {
 
 export type GetUserTreeResponse = ActionResponse<GetUserTreeResult>
 
+const getFutureSuggestionsSchema = z.object({
+  nodeId: z.string().uuid(),
+})
+
+export type GetFutureSuggestionsInput = z.input<
+  typeof getFutureSuggestionsSchema
+>
+
+export interface FutureSuggestionResult {
+  id: string
+  label: string
+  steps: Array<{
+    id: string
+    label: string
+  }>
+  matchedDisplayName: string
+  matchedNodeLabel: string
+  matchedOccupation: string | null
+  overlapTagNames: string[]
+  profileHref: string
+  supportingExamples: number
+}
+
+export interface GetFutureSuggestionsResult {
+  nodeId: string
+  nodeLabel: string
+  selectedTagNames: string[]
+  suggestions: FutureSuggestionResult[]
+}
+
+export type GetFutureSuggestionsResponse =
+  ActionResponse<GetFutureSuggestionsResult>
+
+function normalizeTagIds(input: unknown): string[] {
+  if (!Array.isArray(input)) {
+    return []
+  }
+
+  return input.filter(
+    (value): value is string =>
+      typeof value === "string" && value.trim().length > 0
+  )
+}
+
+type SuggestionTreeNode = {
+  id: string
+  concreteAnswer: string
+  children?: SuggestionTreeNode[]
+}
+
+function collectSuggestionPaths(
+  nodes: SuggestionTreeNode[],
+  maxDepth: number,
+  prefix: Array<{ id: string; label: string }> = []
+): Array<Array<{ id: string; label: string }>> {
+  if (nodes.length === 0 || maxDepth <= 0) {
+    return []
+  }
+
+  const paths: Array<Array<{ id: string; label: string }>> = []
+
+  for (const node of nodes) {
+    const label = node.concreteAnswer.trim()
+    if (!label) {
+      continue
+    }
+
+    const nextPath = [...prefix, { id: node.id, label }]
+    const childPaths = collectSuggestionPaths(
+      node.children ?? [],
+      maxDepth - 1,
+      nextPath
+    )
+
+    if (childPaths.length === 0) {
+      paths.push(nextPath)
+      continue
+    }
+
+    paths.push(...childPaths)
+  }
+
+  return paths
+}
+
 async function validateNoCircularReference(
   userId: string,
   nodeId: string,
@@ -155,6 +245,26 @@ export async function addNode(
       throw new AppActionError("VALIDATION_ERROR", "入力値が不正です。")
     }
     const input = parseResult.data
+    const tags = await classifyNodeTags({
+      concreteAnswer: input.concreteAnswer,
+      abstractAnswer: input.abstractAnswer ?? null,
+    }).catch((error: unknown) => {
+      console.warn("[nodes.addNode] tag classification failed", {
+        userId: user.id,
+        originalError:
+          error instanceof Error
+            ? {
+                message: error.message,
+                name: error.name,
+              }
+            : error,
+      })
+
+      return {
+        realTagIds: [],
+        emotionalTagIds: [],
+      }
+    })
 
     const createNodeWithQuestion = async (
       tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
@@ -184,6 +294,8 @@ export async function addNode(
           abstractQuestionId: abstractQuestion.id,
           concreteAnswer: input.concreteAnswer,
           abstractAnswer: input.abstractAnswer ?? null,
+          realTags: tags.realTagIds,
+          emotionalTags: tags.emotionalTagIds,
         } as never,
       })
     }
@@ -251,20 +363,44 @@ export async function addNode(
       }
 
       const node = await prisma.$transaction(async (tx) => {
-        const currentChild = await tx.node.findFirst({
-          where: {
-            userId: user.id,
-            parentId: targetParent.id,
-          },
-          select: { id: true },
-        })
+        let childIdsToReconnect: string[] = []
+
+        if (input.targetChildId) {
+          const targetChild = await tx.node.findFirst({
+            where: {
+              id: input.targetChildId,
+              userId: user.id,
+              parentId: targetParent.id,
+            },
+            select: { id: true },
+          })
+
+          if (!targetChild) {
+            throw new AppActionError(
+              "NODE_NOT_FOUND",
+              "差し込み対象の子ノードが見つかりません。"
+            )
+          }
+
+          childIdsToReconnect = [targetChild.id]
+        } else {
+          const currentChildren = await tx.node.findMany({
+            where: {
+              userId: user.id,
+              parentId: targetParent.id,
+            },
+            select: { id: true },
+          })
+
+          childIdsToReconnect = currentChildren.map((child) => child.id)
+        }
 
         const insertedNode = await createNodeWithQuestion(tx, targetParent.id)
 
-        if (currentChild) {
-          await tx.node.update({
+        if (childIdsToReconnect.length > 0) {
+          await tx.node.updateMany({
             where: {
-              id: currentChild.id,
+              id: { in: childIdsToReconnect },
             },
             data: { parentId: insertedNode.id },
           })
@@ -588,119 +724,295 @@ export async function getUserTree(
     }
 
     const { rootId } = parseResult.data
+    const nodes = await listUserTreeNodes(user.id, rootId)
 
-    const toResultNode = (
-      node: {
-        id: string
-        parentId: string | null
-        concreteAnswer: string
-        abstractAnswer: string | null
-        realTags: unknown
-        emotionalTags: unknown
-        createdAt: Date
-      },
-      depth: number
-    ): UserTreeNodeResult => ({
-      id: node.id,
-      parentId: node.parentId,
-      concreteAnswer: node.concreteAnswer,
-      abstractAnswer: node.abstractAnswer,
-      realTags: node.realTags as string[],
-      emotionalTags: node.emotionalTags as string[],
-      createdAt: node.createdAt.toISOString(),
-      depth,
+    return {
+      nodes,
+    }
+  } catch (error) {
+    console.error("[nodes.getUserTree] failed", {
+      originalError:
+        error instanceof Error
+          ? {
+              message: error.message,
+              name: error.name,
+            }
+          : error,
     })
 
-    const selection = {
-      id: true,
-      parentId: true,
-      concreteAnswer: true,
-      abstractAnswer: true,
-      realTags: true,
-      emotionalTags: true,
-      createdAt: true,
-    } as const
-
-    const nodes: UserTreeNodeResult[] = []
-
-    let currentLevel:
-      | Array<{
-          id: string
-          parentId: string | null
-          concreteAnswer: string
-          abstractAnswer: string | null
-          realTags: unknown
-          emotionalTags: unknown
-          createdAt: Date
-        }>
-      | undefined
-
-    if (rootId) {
-      const rootNode = await prisma.node.findUnique({
-        where: { id: rootId },
-        select: {
-          userId: true,
-          ...selection,
-        },
-      })
-
-      if (!rootNode) {
-        throw new AppActionError(
-          "NODE_NOT_FOUND",
-          "起点ノードが見つかりません。"
-        )
-      }
-
-      if (rootNode.userId !== user.id) {
-        throw new AppActionError(
-          "FORBIDDEN",
-          "このノードへの操作は許可されていません。"
-        )
-      }
-
-      currentLevel = [
-        {
-          id: rootNode.id,
-          parentId: rootNode.parentId,
-          concreteAnswer: rootNode.concreteAnswer,
-          abstractAnswer: rootNode.abstractAnswer,
-          realTags: rootNode.realTags,
-          emotionalTags: rootNode.emotionalTags,
-          createdAt: rootNode.createdAt,
-        },
-      ]
-    } else {
-      currentLevel = await prisma.node.findMany({
-        where: {
-          userId: user.id,
-          parentId: null,
-        },
-        orderBy: { createdAt: "asc" },
-        select: selection,
-      })
-    }
-
-    let depth = 0
-
-    while (currentLevel.length > 0) {
-      nodes.push(...currentLevel.map((node) => toResultNode(node, depth)))
-
-      const parentIds: string[] = currentLevel.map((node) => node.id)
-
-      currentLevel = await prisma.node.findMany({
-        where: {
-          userId: user.id,
-          parentId: { in: parentIds },
-        },
-        orderBy: { createdAt: "asc" },
-        select: selection,
-      })
-
-      depth += 1
-    }
-
-    return { nodes }
-  } catch (error) {
     return mapUnknownToErrorResponse(error, "ノード処理に失敗しました。")
+  }
+}
+
+/**
+ * Server Action: suggest possible future nodes based on partial tag overlap.
+ */
+export async function getFutureSuggestions(
+  rawInput: GetFutureSuggestionsInput
+): Promise<GetFutureSuggestionsResponse> {
+  try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      throw new AppActionError("UNAUTHORIZED", "認証が必要です。")
+    }
+
+    const parseResult = getFutureSuggestionsSchema.safeParse(rawInput)
+    if (!parseResult.success) {
+      throw new AppActionError("VALIDATION_ERROR", "入力値が不正です。")
+    }
+
+    const { nodeId } = parseResult.data
+    const sourceNode = await prisma.node.findUnique({
+      where: { id: nodeId },
+      select: {
+        concreteAnswer: true,
+        emotionalTags: true,
+        id: true,
+        realTags: true,
+        userId: true,
+      },
+    })
+
+    if (!sourceNode) {
+      throw new AppActionError("NODE_NOT_FOUND", "ノードが見つかりません。")
+    }
+
+    if (sourceNode.userId !== user.id) {
+      throw new AppActionError(
+        "FORBIDDEN",
+        "このノードへの操作は許可されていません。"
+      )
+    }
+
+    const selectedRealTagIds = new Set(normalizeTagIds(sourceNode.realTags))
+    const selectedEmotionalTagIds = new Set(
+      normalizeTagIds(sourceNode.emotionalTags)
+    )
+    const selectedTagIds = [
+      ...new Set([...selectedRealTagIds, ...selectedEmotionalTagIds]),
+    ]
+
+    if (selectedTagIds.length === 0) {
+      return {
+        nodeId: sourceNode.id,
+        nodeLabel: sourceNode.concreteAnswer,
+        selectedTagNames: [],
+        suggestions: [],
+      }
+    }
+
+    const selectedTags = await prisma.tag.findMany({
+      where: {
+        id: { in: selectedTagIds },
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    })
+
+    const tagNameById = new Map(
+      selectedTags.map((tag) => [tag.id, tag.name.trim()] as const)
+    )
+
+    const candidateNodes = await prisma.node.findMany({
+      where: {
+        userId: { not: user.id },
+        children: {
+          some: {},
+        },
+        profile: {
+          is: {
+            onboarded: true,
+          },
+        },
+      },
+      select: {
+        concreteAnswer: true,
+        emotionalTags: true,
+        id: true,
+        realTags: true,
+        profile: {
+          select: {
+            currentOccupation: true,
+            displayName: true,
+            id: true,
+          },
+        },
+        children: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            concreteAnswer: true,
+            id: true,
+            children: {
+              orderBy: { createdAt: "asc" },
+              select: {
+                concreteAnswer: true,
+                id: true,
+                children: {
+                  orderBy: { createdAt: "asc" },
+                  select: {
+                    concreteAnswer: true,
+                    id: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    })
+
+    const suggestionsByLabel = new Map<
+      string,
+      FutureSuggestionResult & {
+        overlapTagIdSet: Set<string>
+        pathLength: number
+        score: number
+      }
+    >()
+
+    for (const candidateNode of candidateNodes) {
+      const candidateRealTagIds = normalizeTagIds(candidateNode.realTags)
+      const candidateEmotionalTagIds = normalizeTagIds(
+        candidateNode.emotionalTags
+      )
+      const matchedRealTagIds = candidateRealTagIds.filter((tagId) =>
+        selectedRealTagIds.has(tagId)
+      )
+      const matchedEmotionalTagIds = candidateEmotionalTagIds.filter((tagId) =>
+        selectedEmotionalTagIds.has(tagId)
+      )
+      const overlapTagIds = [
+        ...new Set([...matchedRealTagIds, ...matchedEmotionalTagIds]),
+      ]
+
+      if (overlapTagIds.length === 0 || candidateNode.children.length === 0) {
+        continue
+      }
+
+      // Prefer factual overlap slightly more than emotional overlap.
+      const score = matchedRealTagIds.length * 2 + matchedEmotionalTagIds.length
+      const suggestionPaths = collectSuggestionPaths(
+        candidateNode.children as SuggestionTreeNode[],
+        MAX_FUTURE_SUGGESTION_DEPTH
+      )
+
+      for (const path of suggestionPaths) {
+        const rootStep = path[0]
+        if (!rootStep) {
+          continue
+        }
+
+        const key = rootStep.label.toLowerCase()
+        const currentSuggestion = suggestionsByLabel.get(key)
+
+        if (!currentSuggestion) {
+          suggestionsByLabel.set(key, {
+            id: rootStep.id,
+            label: rootStep.label,
+            steps: path,
+            matchedDisplayName:
+              candidateNode.profile.displayName?.trim() || "名前未設定",
+            matchedNodeLabel: candidateNode.concreteAnswer,
+            matchedOccupation:
+              candidateNode.profile.currentOccupation?.trim() || null,
+            overlapTagIdSet: new Set(overlapTagIds),
+            overlapTagNames: overlapTagIds
+              .map((tagId) => tagNameById.get(tagId))
+              .filter((value): value is string => Boolean(value))
+              .slice(0, 4),
+            profileHref: `/profile/${candidateNode.profile.id}`,
+            pathLength: path.length,
+            score,
+            supportingExamples: 1,
+          })
+          continue
+        }
+
+        currentSuggestion.supportingExamples += 1
+        overlapTagIds.forEach((tagId) => {
+          currentSuggestion.overlapTagIdSet.add(tagId)
+        })
+
+        currentSuggestion.overlapTagNames = [
+          ...currentSuggestion.overlapTagIdSet,
+        ]
+          .map((tagId) => tagNameById.get(tagId))
+          .filter((value): value is string => Boolean(value))
+          .slice(0, 4)
+
+        if (score > currentSuggestion.score) {
+          currentSuggestion.id = rootStep.id
+          currentSuggestion.label = rootStep.label
+          currentSuggestion.steps = path
+          currentSuggestion.matchedDisplayName =
+            candidateNode.profile.displayName?.trim() || "名前未設定"
+          currentSuggestion.matchedNodeLabel = candidateNode.concreteAnswer
+          currentSuggestion.matchedOccupation =
+            candidateNode.profile.currentOccupation?.trim() || null
+          currentSuggestion.profileHref = `/profile/${candidateNode.profile.id}`
+          currentSuggestion.pathLength = path.length
+          currentSuggestion.score = score
+          continue
+        }
+
+        if (
+          score === currentSuggestion.score &&
+          path.length > currentSuggestion.pathLength
+        ) {
+          currentSuggestion.id = rootStep.id
+          currentSuggestion.label = rootStep.label
+          currentSuggestion.steps = path
+          currentSuggestion.pathLength = path.length
+        }
+      }
+    }
+
+    const suggestions = [...suggestionsByLabel.values()]
+      .sort((left, right) => {
+        if (right.score !== left.score) {
+          return right.score - left.score
+        }
+
+        if (right.supportingExamples !== left.supportingExamples) {
+          return right.supportingExamples - left.supportingExamples
+        }
+
+        if (right.pathLength !== left.pathLength) {
+          return right.pathLength - left.pathLength
+        }
+
+        return left.label.localeCompare(right.label, "ja")
+      })
+      .slice(0, MAX_FUTURE_SUGGESTION_BRANCHES)
+      .map((value) => {
+        return {
+          id: value.id,
+          label: value.label,
+          steps: value.steps,
+          matchedDisplayName: value.matchedDisplayName,
+          matchedNodeLabel: value.matchedNodeLabel,
+          matchedOccupation: value.matchedOccupation,
+          overlapTagNames: value.overlapTagNames,
+          profileHref: value.profileHref,
+          supportingExamples: value.supportingExamples,
+        }
+      })
+
+    return {
+      nodeId: sourceNode.id,
+      nodeLabel: sourceNode.concreteAnswer,
+      selectedTagNames: selectedTagIds
+        .map((tagId) => tagNameById.get(tagId))
+        .filter((value): value is string => Boolean(value)),
+      suggestions,
+    }
+  } catch (error) {
+    return mapUnknownToErrorResponse(error, "未来候補の取得に失敗しました。")
   }
 }
