@@ -1,6 +1,5 @@
 "use server"
 
-import { type Prisma } from "@prisma/client"
 import { ZodError } from "zod"
 
 import {
@@ -64,55 +63,53 @@ export async function submitOnboardingForm(data: unknown) {
   }
 
   try {
-    const result = await prisma.$transaction(
-      async (tx: Prisma.TransactionClient) => {
-        const profile = await tx.profile.findUnique({
-          where: { id: user.id },
-          select: { id: true },
-        })
+    const result = await prisma.$transaction(async (tx) => {
+      const profile = await tx.profile.findUnique({
+        where: { id: user.id },
+        select: { id: true },
+      })
 
-        if (!profile) {
-          throw new OnboardingActionError(
-            "PROFILE_NOT_FOUND",
-            "プロフィールが見つかりません。"
-          )
-        }
-
-        const updatedProfile = await tx.profile.update({
-          where: { id: user.id },
-          data: {
-            onboarded: true,
-          },
-          select: {
-            id: true,
-            goal: true,
-            onboarded: true,
-          },
-        })
-
-        const node = await tx.node.create({
-          data: {
-            userId: user.id,
-            parentId: null,
-            concreteAnswer: normalized.concreteAnswer,
-            abstractAnswer: normalized.abstractAnswer,
-            realTags: [], //TODO: AIでタグ付け
-            emotionalTags: [], //TODO: AIでタグ付け
-          },
-          select: {
-            id: true,
-            parentId: true,
-            concreteAnswer: true,
-            abstractAnswer: true,
-            realTags: true,
-            emotionalTags: true,
-            createdAt: true,
-          },
-        })
-
-        return { profile: updatedProfile, node }
+      if (!profile) {
+        throw new OnboardingActionError(
+          "PROFILE_NOT_FOUND",
+          "プロフィールが見つかりません。"
+        )
       }
-    )
+
+      const updatedProfile = await tx.profile.update({
+        where: { id: user.id },
+        data: {
+          onboarded: true,
+        },
+        select: {
+          id: true,
+          goal: true,
+          onboarded: true,
+        },
+      })
+
+      const node = await tx.node.create({
+        data: {
+          userId: user.id,
+          parentId: null,
+          concreteAnswer: normalized.concreteAnswer,
+          abstractAnswer: normalized.abstractAnswer,
+          realTags: [], //TODO: AIでタグ付け
+          emotionalTags: [], //TODO: AIでタグ付け
+        },
+        select: {
+          id: true,
+          parentId: true,
+          concreteAnswer: true,
+          abstractAnswer: true,
+          realTags: true,
+          emotionalTags: true,
+          createdAt: true,
+        },
+      })
+
+      return { profile: updatedProfile, node }
+    })
 
     console.info("[onboarding] completed", {
       userId: user.id,
