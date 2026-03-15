@@ -1,10 +1,14 @@
-import { Geist, Geist_Mono, Inter } from "next/font/google"
+import { BIZ_UDPGothic, Geist_Mono } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { cn } from "@/lib/utils"
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
+const biz_udpgothic = BIZ_UDPGothic({
+  variable: "--font-sans",
+  subsets: ["latin"],
+  weight: ["400"],
+})
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -18,13 +22,13 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="ja"
       suppressHydrationWarning
       className={cn(
         "antialiased",
         fontMono.variable,
         "font-sans",
-        inter.variable
+        biz_udpgothic.variable
       )}
     >
       <body>
