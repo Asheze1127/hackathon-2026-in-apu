@@ -17,8 +17,9 @@
 
 | #   | タイミング                        | 内容                                                                                   |
 | --- | --------------------------------- | -------------------------------------------------------------------------------------- |
-| 1   | ノード保存時（`POST /api/nodes`） | ユーザーの木全体を文脈としてAIに渡し、今回の「出来事」に関する深掘り質問を生成して返す |
-| 2   | ノード保存時（`POST /api/nodes`） | 入力内容をもとにAIが `realTags` / `emotionalTags` を自動付与する                       |
+| 1   | ノード保存時（`POST /api/nodes`）             | ユーザーの木全体を文脈としてAIに渡し、今回の「出来事」に関する深掘り質問を生成して返す |
+| 2   | ノード保存時（`POST /api/nodes`）             | 入力内容をもとにAIが `realTags` / `emotionalTags` を自動付与する                       |
+| 3   | ロールモデル比較時（`POST /api/role-models/advice`） | 自分の木と選択したロールモデルの木を比較し、次の一手の助言を生成する                  |
 
 > どちらもノード追加のビジネスロジック内で完結する。AI専用エンドポイントは不要。
 
@@ -43,6 +44,10 @@
 | 5   | POST     | `/api/onboarding`    | 初回オンボーディングを完了する（1ノード保存 + profile更新） | 必須 | P0     |
 | 6   | GET      | `/api/profile`       | 自分のプロフィールを取得                                    | 必須 | P0     |
 | 7   | PATCH    | `/api/profile`       | プロフィール（goal等）を更新                                | 必須 | P0     |
+| 8   | GET      | `/api/role-models/selections` | 自分が保存したロールモデル一覧を取得                     | 必須 | P1     |
+| 9   | PUT      | `/api/role-models/selections/:targetUserId` | ロールモデルを保存し、必要なら主ロールモデルに設定 | 必須 | P1     |
+| 10  | DELETE   | `/api/role-models/selections/:targetUserId` | 保存済みロールモデルを解除                           | 必須 | P1     |
+| 11  | POST     | `/api/role-models/advice` | 現在の木とロールモデルの木を比較したAI助言を取得         | 必須 | P1     |
 
 ---
 
@@ -417,6 +422,152 @@ Content-Type: application/json
     "location": "東京都渋谷区",
     "goal": "起業家として独立したい",
     "onboarded": true
+  }
+}
+```
+
+---
+
+### 2-8. `GET /api/role-models/selections` — 保存済みロールモデル一覧を取得
+
+ユーザーが保存しているロールモデル一覧を返す。`isPrimary = true` の行が、現在比較対象として使う主ロールモデル。
+
+#### Request
+
+```http
+GET /api/role-models/selections
+Authorization: Bearer <token>
+```
+
+#### Response `200 OK`
+
+```json
+{
+  "roleModels": [
+    {
+      "targetUserId": "uuid",
+      "isPrimary": true,
+      "createdAt": "2026-03-16T00:00:00.000Z",
+      "profile": {
+        "displayName": "山田 直人",
+        "currentOccupation": "SaaSスタートアップ共同創業者",
+        "avatarUrl": "https://cdn.example.com/profiles/user-1.png"
+      }
+    }
+  ]
+}
+```
+
+---
+
+### 2-9. `PUT /api/role-models/selections/:targetUserId` — ロールモデルを保存する
+
+指定ユーザーをロールモデルとして保存する。
+既存保存がない場合は INSERT、ある場合は `isPrimary` だけ更新する。
+
+#### Request
+
+```http
+PUT /api/role-models/selections/:targetUserId
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "isPrimary": true
+}
+```
+
+| フィールド  | 型      | 説明                                           |
+| ----------- | ------- | ---------------------------------------------- |
+| `isPrimary` | boolean | `true` の場合、そのユーザーを主ロールモデルにする |
+
+#### Response `200 OK`
+
+```json
+{
+  "selection": {
+    "id": "uuid",
+    "targetUserId": "uuid",
+    "isPrimary": true,
+    "createdAt": "2026-03-16T00:00:00.000Z",
+    "updatedAt": "2026-03-16T00:05:00.000Z"
+  }
+}
+```
+
+補足:
+
+- 同一ユーザーを重複保存しないよう `UNIQUE (user_id, role_model_user_id)` を持つ
+- `isPrimary = true` を更新すると、同ユーザーの他レコードは `false` に落とす
+- 自分自身はロールモデルとして保存できない
+
+---
+
+### 2-10. `DELETE /api/role-models/selections/:targetUserId` — 保存済みロールモデルを解除する
+
+#### Request
+
+```http
+DELETE /api/role-models/selections/:targetUserId
+Authorization: Bearer <token>
+```
+
+#### Response `200 OK`
+
+```json
+{
+  "deletedTargetUserId": "uuid"
+}
+```
+
+---
+
+### 2-11. `POST /api/role-models/advice` — ロールモデル比較のAI助言を取得する
+
+比較結果は DB に保存しない。毎回、自分の木と選択したロールモデルの木を取得して AI に渡し、その場で助言を生成する。
+
+#### Request
+
+```http
+POST /api/role-models/advice
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "targetUserId": "uuid"
+}
+```
+
+#### バックエンド内部の処理フロー
+
+```
+1. targetUserId が自分の保存済みロールモデルに含まれるか確認する
+2. 自分の木を取得する
+3. ロールモデルの木を取得する
+4. 現在ノード・共通タグ・差分タグ・未来候補を抽出する
+5. AI に「今の位置」「次の一手」「準備」「避けるべき罠」を生成させる
+6. レスポンス返却
+```
+
+#### Response `200 OK`
+
+```json
+{
+  "advice": {
+    "currentPosition": "今は大学生として、エンジニア志向と就職志向が同時に見えている段階です。",
+    "nextStep": "まずは開発経験を増やして、就職時に作れるものを明確にするのが有効です。",
+    "preparation": [
+      "週次でアウトプットを残す",
+      "インターンで現場経験を積む"
+    ],
+    "pitfalls": [
+      "選択肢を広げすぎて意思決定が遅くなる",
+      "作る経験より情報収集を優先しすぎる"
+    ]
   }
 }
 ```

@@ -6,6 +6,7 @@ import { GraphTabBar } from "@/components/nav/tabbar"
 import { ProfileCard } from "@/components/profile/profile-card"
 import { ProfileTimeline } from "@/components/profile/profile-timeline"
 import { ProfileTree } from "@/components/profile/profile-tree"
+import { RoleModelSelectionPanel } from "@/components/rolemodel/rolemodel-selection-panel"
 import { PageLayout } from "@/components/shared/page-layout"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/server"
@@ -30,7 +31,7 @@ export default async function RoleModelProfilePage({
     redirect("/profile")
   }
 
-  const roleModel = await getRoleModelDetail(uid)
+  const roleModel = await getRoleModelDetail(uid, user.id)
 
   if (!roleModel) {
     notFound()
@@ -57,6 +58,13 @@ export default async function RoleModelProfilePage({
         branchFrom={roleModel.branchFrom}
         branchTo={roleModel.branchTo}
         dmHref={roleModel.dmHref}
+      />
+
+      <RoleModelSelectionPanel
+        initialIsPrimary={roleModel.isPrimary}
+        initialIsSaved={roleModel.isSaved}
+        roleModelName={roleModel.name}
+        targetUserId={uid}
       />
 
       <section className="space-y-4">
