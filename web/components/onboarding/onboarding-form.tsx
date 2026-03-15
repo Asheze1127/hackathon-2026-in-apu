@@ -3,9 +3,12 @@
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema"
 import { useRouter } from "next/navigation"
 import { Controller, useForm } from "react-hook-form"
-import * as z from "zod"
 
 import { submitOnboardingForm } from "@/app/(main)/(onboarding)/onboarding/actions"
+import {
+  formSchema,
+  type OnboardingFormInput,
+} from "@/lib/onboarding/form-schema"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -21,20 +24,9 @@ import {
   InputGroupTextarea,
 } from "@/components/ui/input-group"
 
-const formSchema = z.object({
-  present: z
-    .string()
-    .min(1, "テキストは必須です。")
-    .max(100, "テキストは100文字以内で入力してください。"),
-  reason: z
-    .string()
-    .min(1, "テキストは必須です。")
-    .max(100, "テキストは100文字以内で入力してください。"),
-})
-
 export function OnboardingForm() {
   const router = useRouter()
-  const form = useForm<z.infer<typeof formSchema>>({
+  const form = useForm<OnboardingFormInput>({
     resolver: standardSchemaResolver(formSchema),
     defaultValues: {
       present: "",
@@ -44,7 +36,7 @@ export function OnboardingForm() {
 
   const { isSubmitting } = form.formState
 
-  async function onSubmit(data: z.infer<typeof formSchema>) {
+  async function onSubmit(data: OnboardingFormInput) {
     await submitOnboardingForm(data)
     router.push("/onboarding/done")
   }
