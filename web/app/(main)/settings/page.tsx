@@ -1,5 +1,5 @@
 import { LogoutButton } from "@/components/auth/logout-button"
-import { GraphTabBar } from "@/components/graph-tabbar"
+import { GraphTabBar } from "@/components/nav/tabbar"
 
 const Page = () => {
   return (

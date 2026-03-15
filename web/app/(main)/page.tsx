@@ -1,5 +1,5 @@
 import Graph from "@/components/graph"
-import { GraphTabBar } from "@/components/graph-tabbar"
+import { GraphTabBar } from "@/components/nav/tabbar"
 
 export default async function Page() {
   return (
