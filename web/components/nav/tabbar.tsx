@@ -29,8 +29,13 @@ export function GraphTabBar() {
                   : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
               }`}
             >
-              <Icon size={15} />
-              {label}
+              <span className="md:hidden">
+                <Icon size={20} />
+              </span>
+              <span className="flex items-center gap-1 max-md:hidden">
+                <Icon size={15} />
+                {label}
+              </span>
             </Link>
           )
         })}
