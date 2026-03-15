@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import Link from "next/link"
+import { useEffect, useSyncExternalStore, useState } from "react"
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema"
 import { CheckCircle2 } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { Controller, useForm, useWatch } from "react-hook-form"
+import { useForm, useWatch } from "react-hook-form"
 
 import { submitOnboardingForm } from "@/app/(main)/(onboarding)/onboarding/actions"
 import { ProfileSettingsSection } from "@/components/profile/profile-settings-section"
@@ -16,41 +17,54 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { profileSettingsFormSchema } from "@/lib/profile/form-schema"
+import type { ProfileSettingsFormInput } from "@/lib/profile/form-schema"
+import type { OnboardingFormInput } from "@/lib/onboarding/form-schema"
+import type { OnboardingQuestionInput } from "@/lib/onboarding/form-schema"
 import {
-  Field,
-  FieldError,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field"
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupText,
-  InputGroupTextarea,
-} from "@/components/ui/input-group"
-import {
-  formSchema,
-  type OnboardingFormInput,
-} from "@/lib/onboarding/form-schema"
+  clearOnboardingQuestionDraft,
+  readOnboardingQuestionDraft,
+} from "@/lib/onboarding/draft-storage"
 
 interface OnboardingFormProps {
   userId: string
 }
 
+function subscribeToOnboardingDraft(callback: () => void) {
+  if (typeof window === "undefined") {
+    return () => undefined
+  }
+
+  const handleStorage = () => {
+    callback()
+  }
+
+  window.addEventListener("storage", handleStorage)
+
+  return () => {
+    window.removeEventListener("storage", handleStorage)
+  }
+}
+
 export function OnboardingForm({ userId }: OnboardingFormProps) {
   const router = useRouter()
   const [isAvatarUploading, setIsAvatarUploading] = useState(false)
+  const questionDraft = useSyncExternalStore<
+    OnboardingQuestionInput | null | undefined
+  >(
+    subscribeToOnboardingDraft,
+    readOnboardingQuestionDraft,
+    () => undefined
+  )
 
-  const form = useForm<OnboardingFormInput>({
-    resolver: standardSchemaResolver(formSchema),
+  const form = useForm<ProfileSettingsFormInput>({
+    resolver: standardSchemaResolver(profileSettingsFormSchema),
     defaultValues: {
       displayName: "",
       age: "",
       avatarUrl: "",
       currentOccupation: "",
       location: "",
-      present: "",
-      reason: "",
     },
   })
 
@@ -60,7 +74,11 @@ export function OnboardingForm({ userId }: OnboardingFormProps) {
     form.register("currentOccupation")
     form.register("age")
     form.register("location")
-  }, [form])
+
+    if (questionDraft === null) {
+      router.replace("/onboarding/form")
+    }
+  }, [form, questionDraft, router])
 
   const { isSubmitting } = form.formState
   const [displayName, avatarUrl, currentOccupation, age, location] = useWatch({
@@ -68,117 +86,74 @@ export function OnboardingForm({ userId }: OnboardingFormProps) {
     name: ["displayName", "avatarUrl", "currentOccupation", "age", "location"],
   })
 
-  async function onSubmit(
-    data: OnboardingFormInput,
-    options?: { saveProfile?: boolean }
-  ) {
-    await submitOnboardingForm(data, options)
+  async function onSubmit(data: ProfileSettingsFormInput) {
+    if (!questionDraft) {
+      router.replace("/onboarding/form")
+      return
+    }
+
+    const payload: OnboardingFormInput = {
+      ...questionDraft,
+      ...data,
+    }
+
+    await submitOnboardingForm(payload)
+    clearOnboardingQuestionDraft()
     router.push("/onboarding/done")
   }
 
-  async function handleSkipProfile() {
-    form.setValue("avatarUrl", "", { shouldDirty: true, shouldValidate: false })
-    form.setValue("currentOccupation", "", {
-      shouldDirty: true,
-      shouldValidate: false,
-    })
-    form.setValue("age", "", { shouldDirty: true, shouldValidate: false })
-    form.setValue("location", "", {
-      shouldDirty: true,
-      shouldValidate: false,
-    })
-    form.clearErrors(["avatarUrl", "currentOccupation", "age", "location"])
-
-    await form.handleSubmit(async (data) => {
-      await onSubmit(data, {
-        saveProfile: false,
-      })
-    })()
+  if (questionDraft == null) {
+    return null
   }
 
   return (
     <form
       id="onboarding-form"
-      onSubmit={form.handleSubmit(async (data) => {
-        await onSubmit(data, {
-          saveProfile: true,
-        })
-      })}
+      onSubmit={form.handleSubmit(onSubmit)}
       className="flex flex-col gap-8"
     >
-      <FieldGroup>
-        <Controller
-          name="present"
-          control={form.control}
-          render={({ field, fieldState }) => (
-            <Field data-invalid={fieldState.invalid}>
-              <FieldLabel htmlFor="form-present" className="font-bold">
-                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                  1
-                </span>
-                現在、あなたが熱心に取り組んでいることは何ですか
-              </FieldLabel>
-              <InputGroup>
-                <InputGroupTextarea
-                  {...field}
-                  id="form-present"
-                  placeholder="大学生・社会人・フリーランスなど、なんでもいいので教えてください！"
-                  rows={5}
-                  className="min-h-24 resize-none"
-                  aria-invalid={fieldState.invalid}
-                />
-                <InputGroupAddon align="block-end">
-                  <InputGroupText className="tabular-nums">
-                    {field.value.length}/100 文字
-                  </InputGroupText>
-                </InputGroupAddon>
-              </InputGroup>
-              {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
-            </Field>
-          )}
-        />
-        <Controller
-          name="reason"
-          control={form.control}
-          render={({ field, fieldState }) => (
-            <Field data-invalid={fieldState.invalid}>
-              <FieldLabel htmlFor="form-reason" className="font-bold">
-                <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                  2
-                </span>
-                それに注力している理由を教えてください
-              </FieldLabel>
-              <InputGroup>
-                <InputGroupTextarea
-                  {...field}
-                  id="form-reason"
-                  placeholder="モチベーションや背景など、なんでもいいので教えてください！"
-                  rows={5}
-                  className="min-h-24 resize-none"
-                  aria-invalid={fieldState.invalid}
-                />
-                <InputGroupAddon align="block-end">
-                  <InputGroupText className="tabular-nums">
-                    {field.value.length}/100 文字
-                  </InputGroupText>
-                </InputGroupAddon>
-              </InputGroup>
-              {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
-            </Field>
-          )}
-        />
-      </FieldGroup>
+      <Card size="sm" className="border border-border/80 bg-muted/20">
+        <CardHeader>
+          <CardTitle>さっき回答した内容</CardTitle>
+          <CardDescription>
+            回答を直したい場合は質問ページに戻れます。
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+            <div className="text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">
+              Question 1
+            </div>
+            <div className="mt-1 text-sm font-medium text-foreground">
+              {questionDraft.present}
+            </div>
+          </div>
+          <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
+            <div className="text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">
+              Question 2
+            </div>
+            <div className="mt-1 text-sm font-medium text-foreground">
+              {questionDraft.reason}
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/onboarding/form">質問に戻る</Link>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
           <CardTitle>プロフィール設定</CardTitle>
           <CardDescription>
-            名前は必須です。アイコン、職業、年齢、住んでいるところはあとからプロフィール画面でも編集できます。
+            名前は必須です。アイコン、職業、年齢、住んでいるところは任意で、あとからプロフィール画面でも編集できます。
           </CardDescription>
         </CardHeader>
         <CardContent>
           <ProfileSettingsSection
-            description="名前は他のユーザーに見える表示名です。その他の項目は不要ならスキップできます。"
+            description="名前は他のユーザーに見える表示名です。残りの項目は任意です。"
             disabled={isSubmitting}
             errors={{
               displayName: form.formState.errors.displayName?.message,
@@ -208,18 +183,7 @@ export function OnboardingForm({ userId }: OnboardingFormProps) {
         </CardContent>
       </Card>
 
-      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          disabled={isSubmitting || isAvatarUploading}
-          onClick={() => {
-            void handleSkipProfile()
-          }}
-        >
-          名前だけ保存して続ける
-        </Button>
+      <div className="flex justify-end">
         <Button
           type="submit"
           size="lg"

@@ -8,10 +8,16 @@ import {
   buildLatestBranch,
   buildTimelineItems,
   listUserTreeNodes,
+  selectCurrentTreeNodeId,
+  type UserTreeNodeData,
 } from "@/lib/user-tree"
 
 interface RoleModelSelectionLookupRow {
   isPrimary: boolean
+  roleModelUserId: string
+}
+
+interface PrimaryRoleModelSelectionRow {
   roleModelUserId: string
 }
 
@@ -57,6 +63,21 @@ export interface RoleModelDetail {
   years: string
 }
 
+export interface PrimaryRoleModelHomeCard {
+  avatarText: string
+  currentNodeLabel: string
+  id: string
+  location: string
+  name: string
+  ownBranchFrom: string
+  ownBranchTo: string
+  ownCurrentNodeLabel: string
+  profileHref: string
+  role: string
+  roleModelBranchFrom: string
+  roleModelBranchTo: string
+}
+
 async function listSavedRoleModelSelections(userId: string) {
   return prisma.$queryRaw<Array<RoleModelSelectionLookupRow>>`
     select
@@ -78,6 +99,20 @@ async function getSavedRoleModelSelection(
     from role_model_selections
     where user_id = cast(${userId} as uuid)
       and role_model_user_id = cast(${targetUserId} as uuid)
+    limit 1
+  `
+
+  return rows[0] ?? null
+}
+
+async function getPrimaryRoleModelSelection(userId: string) {
+  const rows = await prisma.$queryRaw<Array<PrimaryRoleModelSelectionRow>>`
+    select
+      role_model_user_id as "roleModelUserId"
+    from role_model_selections
+    where user_id = cast(${userId} as uuid)
+      and is_primary = true
+    order by updated_at desc
     limit 1
   `
 
@@ -190,5 +225,64 @@ export async function getRoleModelDetail(
       treeNodes.length === 0
         ? "ノード未登録"
         : `意思決定ノード ${treeNodes.length}件`,
+  }
+}
+
+export async function getPrimaryRoleModelHomeCard(
+  currentUserId: string,
+  ownTreeNodes?: UserTreeNodeData[]
+): Promise<PrimaryRoleModelHomeCard | null> {
+  const selection = await getPrimaryRoleModelSelection(currentUserId)
+
+  if (!selection) {
+    return null
+  }
+
+  const [profile, resolvedOwnTreeNodes, roleModelTreeNodes] = await Promise.all([
+    prisma.profile.findUnique({
+      where: {
+        id: selection.roleModelUserId,
+      },
+      select: {
+        currentOccupation: true,
+        displayName: true,
+        id: true,
+        location: true,
+        onboarded: true,
+      },
+    }),
+    ownTreeNodes
+      ? Promise.resolve(ownTreeNodes)
+      : listUserTreeNodes(currentUserId),
+    listUserTreeNodes(selection.roleModelUserId),
+  ])
+
+  if (!profile?.onboarded) {
+    return null
+  }
+
+  const ownCurrentNodeId = selectCurrentTreeNodeId(resolvedOwnTreeNodes)
+  const ownCurrentNode =
+    resolvedOwnTreeNodes.find((node) => node.id === ownCurrentNodeId) ?? null
+  const ownLatestBranch = buildLatestBranch(resolvedOwnTreeNodes)
+
+  const roleModelCurrentNodeId = selectCurrentTreeNodeId(roleModelTreeNodes)
+  const roleModelCurrentNode =
+    roleModelTreeNodes.find((node) => node.id === roleModelCurrentNodeId) ?? null
+  const roleModelLatestBranch = buildLatestBranch(roleModelTreeNodes)
+
+  return {
+    avatarText: getAvatarText(profile.displayName, profile.id),
+    currentNodeLabel: roleModelCurrentNode?.concreteAnswer ?? "まだノードがありません",
+    id: profile.id,
+    location: profile.location?.trim() || "住んでいるところ未設定",
+    name: profile.displayName?.trim() || "名前未設定",
+    ownBranchFrom: ownLatestBranch.from,
+    ownBranchTo: ownLatestBranch.to,
+    ownCurrentNodeLabel: ownCurrentNode?.concreteAnswer ?? "まだノードがありません",
+    profileHref: `/profile/${profile.id}`,
+    role: profile.currentOccupation?.trim() || "活動内容を設定中",
+    roleModelBranchFrom: roleModelLatestBranch.from,
+    roleModelBranchTo: roleModelLatestBranch.to,
   }
 }

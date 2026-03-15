@@ -4,27 +4,30 @@ import { profileSettingsFormSchema } from "@/lib/profile/form-schema"
 
 const MAX_ANSWER_LENGTH = 100
 
-export const formSchema = z
-  .object({
-    present: z
-      .string()
-      .trim()
-      .min(1, "テキストは必須です。")
-      .max(
-        MAX_ANSWER_LENGTH,
-        `テキストは${MAX_ANSWER_LENGTH}文字以内で入力してください。`
-      ),
-    reason: z
-      .string()
-      .trim()
-      .min(1, "テキストは必須です。")
-      .max(
-        MAX_ANSWER_LENGTH,
-        `テキストは${MAX_ANSWER_LENGTH}文字以内で入力してください。`
-      ),
-  })
-  .extend(profileSettingsFormSchema.shape)
+export const onboardingQuestionSchema = z.object({
+  present: z
+    .string()
+    .trim()
+    .min(1, "テキストは必須です。")
+    .max(
+      MAX_ANSWER_LENGTH,
+      `テキストは${MAX_ANSWER_LENGTH}文字以内で入力してください。`
+    ),
+  reason: z
+    .string()
+    .trim()
+    .min(1, "テキストは必須です。")
+    .max(
+      MAX_ANSWER_LENGTH,
+      `テキストは${MAX_ANSWER_LENGTH}文字以内で入力してください。`
+    ),
+})
+
+export const formSchema = onboardingQuestionSchema.extend(
+  profileSettingsFormSchema.shape
+)
 
 export type OnboardingFormInput = z.infer<typeof formSchema>
+export type OnboardingQuestionInput = z.infer<typeof onboardingQuestionSchema>
 
 export { MAX_ANSWER_LENGTH }
