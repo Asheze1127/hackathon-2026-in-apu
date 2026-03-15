@@ -23,10 +23,6 @@ export default async function RoleModelPage() {
     <PageLayout>
       <div className="flex flex-col gap-6 pb-24">
         <div className="flex flex-col gap-4">
-          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-border/80 bg-card px-4 py-2 text-sm text-muted-foreground">
-            <UsersRound className="size-4" />
-            real profiles
-          </div>
           <div className="flex flex-col gap-1">
             <h1 className="text-3xl font-bold tracking-tight">
               ロールモデルを探す

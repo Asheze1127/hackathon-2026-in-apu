@@ -11,6 +11,7 @@ import { PageLayout } from "@/components/shared/page-layout"
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/server"
 import { getRoleModelDetail } from "@/lib/rolemodels"
+import { Separator } from "@/components/ui/separator"
 
 export default async function RoleModelProfilePage({
   params,
@@ -68,22 +69,14 @@ export default async function RoleModelProfilePage({
       />
 
       <section className="space-y-4">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-card px-4 py-2 text-sm text-muted-foreground">
-          <GitBranch className="size-4" />
-          decision timeline
-        </div>
         <ProfileTimeline
           aiChatHref={roleModel.aiChatHref}
           name={roleModel.name}
           timelineItems={roleModel.timelineItems}
         />
       </section>
-
+      <Separator />
       <section className="space-y-4">
-        <div className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-card px-4 py-2 text-sm text-muted-foreground">
-          <GitBranch className="size-4" />
-          decision tree
-        </div>
         <ProfileTree
           nodes={roleModel.profileNodes}
           edges={roleModel.profileEdges}
