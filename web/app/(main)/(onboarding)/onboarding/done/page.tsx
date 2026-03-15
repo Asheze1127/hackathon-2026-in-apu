@@ -1,12 +1,13 @@
 import Link from "next/link"
 
+import { PageLayout } from "@/components/shared/page-layout"
 import { Button } from "@/components/ui/button"
 
 const Page = () => {
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-10 px-4 py-24">
+    <PageLayout>
       <div className="flex flex-col gap-4">
-        <h1 className="text-4xl font-bold tracking-tight">
+        <h1 className="text-2xl font-bold tracking-tight md:text-4xl">
           ありがとうございます 🎉
         </h1>
         <p className="leading-relaxed text-muted-foreground">
@@ -18,7 +19,7 @@ const Page = () => {
           <Link href="/">ツリーを見る →</Link>
         </Button>
       </div>
-    </div>
+    </PageLayout>
   )
 }
 
