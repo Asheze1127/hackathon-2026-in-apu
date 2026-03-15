@@ -27,10 +27,14 @@ import { useGraphState } from "@/hooks/use-graph-state"
 import type { GraphTreeData } from "@/lib/user-tree"
 
 const SUGGESTION_NODE_PREFIX = "future-suggestion:"
-const NODE_DIAMETER = 80
-const NODE_RADIUS = NODE_DIAMETER / 2
-const OVERLAY_BRANCH_GAP_X = 148
-const OVERLAY_STEP_GAP_Y = 114
+const GRAPH_NODE_DIAMETER = 80
+const GRAPH_NODE_RADIUS = GRAPH_NODE_DIAMETER / 2
+const OVERLAY_MOBILE_NODE_DIAMETER = 58
+const OVERLAY_DESKTOP_NODE_DIAMETER = 80
+const OVERLAY_MOBILE_BRANCH_GAP_X = 78
+const OVERLAY_DESKTOP_BRANCH_GAP_X = 148
+const OVERLAY_MOBILE_STEP_GAP_Y = 82
+const OVERLAY_DESKTOP_STEP_GAP_Y = 114
 const OVERLAY_EDGE_COLOR = "#f472b6"
 const OVERLAY_NODE_OPACITY = [0.92, 0.82, 0.72] as const
 
@@ -110,6 +114,7 @@ export default function Graph({
     width: 0,
   })
   const futureSuggestionRequestIdRef = useRef(0)
+  const isMobileViewport = containerSize.width > 0 && containerSize.width < 768
 
   const displayGraph = useMemo(() => {
     const selectedNodeId = futureSuggestionNodeId
@@ -201,30 +206,63 @@ export default function Graph({
       return null
     }
 
+    const isMobileViewport = containerSize.width < 768
+    const overlayNodeDiameter = isMobileViewport
+      ? OVERLAY_MOBILE_NODE_DIAMETER
+      : OVERLAY_DESKTOP_NODE_DIAMETER
+    const overlayNodeRadius = overlayNodeDiameter / 2
+    const overlayBranchGapX = isMobileViewport
+      ? OVERLAY_MOBILE_BRANCH_GAP_X
+      : OVERLAY_DESKTOP_BRANCH_GAP_X
+    const overlayStepGapY = isMobileViewport
+      ? OVERLAY_MOBILE_STEP_GAP_Y
+      : OVERLAY_DESKTOP_STEP_GAP_Y
+    const sidePadding = overlayNodeRadius + (isMobileViewport ? 10 : 16)
+    const topReservedSpace = isMobileViewport ? 108 : 56
     const sourceCenterX =
-      (sourceNode.position.x + NODE_RADIUS) * viewport.zoom + viewport.x
+      (sourceNode.position.x + GRAPH_NODE_RADIUS) * viewport.zoom + viewport.x
     const sourceCenterY =
-      (sourceNode.position.y + NODE_RADIUS) * viewport.zoom + viewport.y
-    const sourceRadius = NODE_RADIUS * viewport.zoom
+      (sourceNode.position.y + GRAPH_NODE_RADIUS) * viewport.zoom + viewport.y
+    const sourceRadius = GRAPH_NODE_RADIUS * viewport.zoom
     const maxVisibleDepth = Math.max(
       1,
-      Math.min(3, Math.floor((sourceCenterY - 56) / OVERLAY_STEP_GAP_Y) || 1)
+      Math.min(
+        isMobileViewport ? 2 : 3,
+        Math.floor(
+          Math.max(sourceCenterY - topReservedSpace, 0) / overlayStepGapY
+        ) || 1
+      )
     )
+    const minCenterX = sidePadding
+    const maxCenterX = containerSize.width - sidePadding
+    const availableTrackWidth = Math.max(maxCenterX - minCenterX, 0)
 
     const nodes = futureSuggestions.suggestions.flatMap(
       (suggestion, branchIndex, allSuggestions) => {
-        const branchOffset =
-          (branchIndex - (allSuggestions.length - 1) / 2) * OVERLAY_BRANCH_GAP_X
+        const centeredOffset =
+          (branchIndex - (allSuggestions.length - 1) / 2) * overlayBranchGapX
+        const preferredCenterX = sourceCenterX + centeredOffset
+        const distributedCenterX =
+          allSuggestions.length === 1
+            ? sourceCenterX
+            : minCenterX +
+              (availableTrackWidth * branchIndex) / (allSuggestions.length - 1)
+        const blendRatio = isMobileViewport ? 0.82 : 0.38
         const branchCenterX = Math.min(
-          containerSize.width - 56,
-          Math.max(56, sourceCenterX + branchOffset)
+          maxCenterX,
+          Math.max(
+            minCenterX,
+            preferredCenterX * (1 - blendRatio) +
+              distributedCenterX * blendRatio
+          )
         )
 
         return suggestion.steps
           .slice(0, maxVisibleDepth)
           .map((step, stepIndex) => ({
             centerX: branchCenterX,
-            centerY: sourceCenterY - (stepIndex + 1) * OVERLAY_STEP_GAP_Y,
+            centerY: sourceCenterY - (stepIndex + 1) * overlayStepGapY,
+            diameter: overlayNodeDiameter,
             id: `${suggestion.id}:${step.id}:${stepIndex}`,
             label: step.label,
             profileHref: suggestion.profileHref,
@@ -233,7 +271,7 @@ export default function Graph({
                 ? { x: sourceCenterX, y: sourceCenterY }
                 : {
                     x: branchCenterX,
-                    y: sourceCenterY - stepIndex * OVERLAY_STEP_GAP_Y,
+                    y: sourceCenterY - stepIndex * overlayStepGapY,
                   },
             stepIndex,
           }))
@@ -243,9 +281,9 @@ export default function Graph({
     const edges = nodes.map((node) => {
       const { end, start } = getCircleEdgePoints({
         from: node.previousPoint,
-        fromRadius: node.stepIndex === 0 ? sourceRadius : NODE_RADIUS,
+        fromRadius: node.stepIndex === 0 ? sourceRadius : overlayNodeRadius,
         to: { x: node.centerX, y: node.centerY },
-        toRadius: NODE_RADIUS,
+        toRadius: overlayNodeRadius,
       })
 
       return {
@@ -258,6 +296,8 @@ export default function Graph({
 
     return {
       edges,
+      isMobileViewport,
+      nodeDiameter: overlayNodeDiameter,
       nodes,
     }
   }, [
@@ -471,7 +511,7 @@ export default function Graph({
                 y2={edge.end.y}
                 stroke={OVERLAY_EDGE_COLOR}
                 strokeDasharray="6 4"
-                strokeWidth="2"
+                strokeWidth={suggestionOverlay.isMobileViewport ? 1.5 : 2}
                 style={{
                   opacity: isOverlayVisible ? 1 : 0,
                   transitionDelay: `${edge.stepIndex * 55}ms`,
@@ -488,15 +528,23 @@ export default function Graph({
               key={node.id}
               type="button"
               aria-label={`${node.label} のプロフィールを見る`}
-              className="pointer-events-auto absolute flex h-20 w-20 items-center justify-center rounded-full border border-rose-200/90 bg-linear-to-br from-rose-50 via-white to-rose-100 px-3 text-center text-xs font-medium text-rose-950 shadow-[0_18px_45px_rgba(244,114,182,0.14)] backdrop-blur-sm will-change-transform hover:border-rose-300 hover:shadow-[0_22px_55px_rgba(244,114,182,0.22)] focus-visible:ring-2 focus-visible:ring-rose-200 focus-visible:outline-none"
+              className="pointer-events-auto absolute flex items-center justify-center rounded-full border border-rose-200/90 bg-linear-to-br from-rose-50 via-white to-rose-100 text-center font-medium text-rose-950 backdrop-blur-sm will-change-transform hover:border-rose-300 focus-visible:ring-2 focus-visible:ring-rose-200 focus-visible:outline-none"
               onClick={() => {
                 router.push(node.profileHref)
               }}
               style={{
+                boxShadow: suggestionOverlay.isMobileViewport
+                  ? "0 12px 30px rgba(244,114,182,0.16)"
+                  : "0 18px 45px rgba(244,114,182,0.14)",
+                fontSize: suggestionOverlay.isMobileViewport ? "10px" : "12px",
+                height: suggestionOverlay.nodeDiameter,
                 left: node.centerX,
                 opacity: isOverlayVisible
                   ? (OVERLAY_NODE_OPACITY[node.stepIndex] ?? 0.72)
                   : 0,
+                paddingInline: suggestionOverlay.isMobileViewport
+                  ? "8px"
+                  : "12px",
                 top: node.centerY,
                 transform: isOverlayVisible
                   ? "translate3d(-50%, -50%, 0) scale(1)"
@@ -505,9 +553,18 @@ export default function Graph({
                 transitionDuration: "360ms",
                 transitionProperty: "transform, opacity",
                 transitionTimingFunction: "cubic-bezier(0.22, 1, 0.36, 1)",
+                width: suggestionOverlay.nodeDiameter,
               }}
             >
-              <span className="line-clamp-3 break-all">{node.label}</span>
+              <span
+                className={
+                  suggestionOverlay.isMobileViewport
+                    ? "line-clamp-2 break-all"
+                    : "line-clamp-3 break-all"
+                }
+              >
+                {node.label}
+              </span>
             </button>
           ))}
         </div>
@@ -536,12 +593,14 @@ export default function Graph({
         ) : null}
       </div>
 
-      <GraphFutureSuggestionsPanel
-        errorMessage={futureSuggestionError}
-        isLoading={isSuggesting}
-        onClose={closeFutureSuggestions}
-        payload={futureSuggestions}
-      />
+      {!isMobileViewport ? (
+        <GraphFutureSuggestionsPanel
+          errorMessage={futureSuggestionError}
+          isLoading={isSuggesting}
+          onClose={closeFutureSuggestions}
+          payload={futureSuggestions}
+        />
+      ) : null}
 
       <GraphNodeAddDialog
         abstractAnswer={abstractAnswer}

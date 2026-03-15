@@ -31,7 +31,7 @@ export default async function Page() {
     <div className="relative h-svh w-full">
       <Graph initialGraphData={initialGraphData} />
       {hasAuthenticatedUser ? (
-        <div className="pointer-events-none absolute top-4 left-4 z-20 right-4 md:top-6 md:left-6 md:right-auto">
+        <div className="pointer-events-none absolute top-3 left-3 z-20 max-w-[calc(100vw-1.5rem)] md:top-6 md:left-6 md:max-w-[28rem]">
           <HomeRoleModelPanel primaryRoleModel={primaryRoleModel} />
         </div>
       ) : null}

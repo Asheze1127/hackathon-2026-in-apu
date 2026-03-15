@@ -46,6 +46,8 @@ interface HomeRoleModelPanelProps {
 
 const panelCardClassName =
   "pointer-events-auto w-full max-w-[20.5rem] border border-border/70 bg-white/82 shadow-[0_18px_65px_rgba(15,23,42,0.1)] backdrop-blur-md sm:max-w-[24rem] md:max-w-[28rem]"
+const compactPillClassName =
+  "pointer-events-auto inline-flex max-w-[11.75rem] items-center gap-2 rounded-full border border-border/70 bg-white/88 px-2.5 py-2 shadow-[0_12px_30px_rgba(15,23,42,0.12)] backdrop-blur-md"
 
 function subscribeToMobileViewport(callback: () => void) {
   if (typeof window === "undefined") {
@@ -93,11 +95,7 @@ function CompactToggleButton({
   )
 }
 
-function AdviceSection({
-  advice,
-}: {
-  advice: RoleModelAdviceResult
-}) {
+function AdviceSection({ advice }: { advice: RoleModelAdviceResult }) {
   return (
     <div className="space-y-3 rounded-[1.4rem] border border-rose-200/80 bg-linear-to-br from-rose-50 via-white to-orange-50 px-4 py-4">
       <div>
@@ -136,9 +134,7 @@ function AdviceSection({
         </div>
 
         <div className="rounded-2xl border border-white/70 bg-white/90 px-3 py-3">
-          <div className="text-xs font-semibold text-amber-700">
-            避けたい罠
-          </div>
+          <div className="text-xs font-semibold text-amber-700">避けたい罠</div>
           <div className="mt-2 flex flex-col gap-2">
             {advice.pitfalls.map((item) => (
               <div
@@ -152,6 +148,42 @@ function AdviceSection({
         </div>
       </div>
     </div>
+  )
+}
+
+function CompactPanelTrigger({
+  avatarText,
+  eyebrow,
+  title,
+  onOpen,
+}: {
+  avatarText?: string
+  eyebrow: string
+  title: string
+  onOpen: () => void
+}) {
+  return (
+    <button type="button" className={compactPillClassName} onClick={onOpen}>
+      <div
+        className={cn(
+          "flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-bold",
+          avatarText
+            ? "bg-primary text-primary-foreground"
+            : "bg-amber-50 text-amber-700"
+        )}
+      >
+        {avatarText ? avatarText : <Star className="size-3.5" />}
+      </div>
+      <div className="min-w-0 flex-1 text-left">
+        <div className="truncate text-[10px] font-semibold tracking-[0.16em] text-muted-foreground uppercase">
+          {eyebrow}
+        </div>
+        <div className="truncate text-xs font-semibold text-foreground">
+          {title}
+        </div>
+      </div>
+      <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+    </button>
   )
 }
 
@@ -207,6 +239,16 @@ export function HomeRoleModelPanel({
   }
 
   if (!primaryRoleModel) {
+    if (isCompact) {
+      return (
+        <CompactPanelTrigger
+          eyebrow="Role Model"
+          title="未選択"
+          onOpen={toggleCompact}
+        />
+      )
+    }
+
     return (
       <Card size="sm" className={panelCardClassName}>
         <CardHeader className="gap-3">
@@ -250,206 +292,141 @@ export function HomeRoleModelPanel({
     )
   }
 
+  if (isCompact) {
+    return (
+      <CompactPanelTrigger
+        avatarText={primaryRoleModel.avatarText}
+        eyebrow="Role Model"
+        title={primaryRoleModel.name}
+        onOpen={toggleCompact}
+      />
+    )
+  }
+
   return (
     <Card size="sm" className={panelCardClassName}>
       <CardHeader className="gap-3">
         <div className="flex items-start justify-between gap-3">
-          <div className="space-y-2 min-w-0">
+          <div className="min-w-0 space-y-2">
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold tracking-[0.16em] text-amber-700 uppercase">
               <Star className="size-3.5" />
               Current Role Model
             </div>
-
-            {isCompact ? (
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-base font-bold text-primary-foreground">
-                  {primaryRoleModel.avatarText}
-                </div>
-                <div className="min-w-0">
-                  <CardTitle className="truncate text-base font-semibold">
-                    {primaryRoleModel.name}
-                  </CardTitle>
-                  <CardDescription className="truncate text-xs">
-                    {primaryRoleModel.role}
-                  </CardDescription>
-                </div>
+            <div className="flex items-center gap-3">
+              <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-lg font-bold text-primary-foreground">
+                {primaryRoleModel.avatarText}
               </div>
-            ) : (
-              <div className="flex items-center gap-3">
-                <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary text-lg font-bold text-primary-foreground">
-                  {primaryRoleModel.avatarText}
-                </div>
-                <div className="min-w-0">
-                  <CardTitle className="truncate text-base font-semibold sm:text-lg">
-                    {primaryRoleModel.name}
-                  </CardTitle>
-                  <CardDescription className="line-clamp-2">
-                    {primaryRoleModel.role} ・ {primaryRoleModel.location}
-                  </CardDescription>
-                </div>
+              <div className="min-w-0">
+                <CardTitle className="truncate text-base font-semibold sm:text-lg">
+                  {primaryRoleModel.name}
+                </CardTitle>
+                <CardDescription className="line-clamp-2">
+                  {primaryRoleModel.role} ・ {primaryRoleModel.location}
+                </CardDescription>
               </div>
-            )}
+            </div>
           </div>
-          <CompactToggleButton
-            isCompact={isCompact}
-            onToggle={toggleCompact}
-          />
+          <CompactToggleButton isCompact={isCompact} onToggle={toggleCompact} />
         </div>
       </CardHeader>
 
       <CardContent
         className={cn(
           "overflow-y-auto",
-          isCompact
-            ? "space-y-3 pt-0"
-            : "max-h-[min(54svh,30rem)] space-y-4 sm:max-h-[min(62svh,32rem)]"
+          "max-h-[min(54svh,30rem)] space-y-4 sm:max-h-[min(62svh,32rem)]"
         )}
       >
-        {isCompact ? (
-          <>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-[1.2rem] border border-slate-200/80 bg-white/90 px-3 py-3">
-                <div className="text-[10px] font-semibold tracking-[0.16em] text-slate-500 uppercase">
-                  自分
-                </div>
-                <div className="mt-1 line-clamp-2 text-xs font-medium text-foreground">
-                  {primaryRoleModel.ownCurrentNodeLabel}
-                </div>
+        <>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="w-full shrink-0 gap-2 sm:w-auto"
+            >
+              <Link href={primaryRoleModel.profileHref}>
+                詳細を見る
+                <ArrowRight />
+              </Link>
+            </Button>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-[1.35rem] border border-indigo-100 bg-linear-to-br from-slate-50 to-white px-4 py-4">
+              <div className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase">
+                <Compass className="size-3.5" />
+                Your Current Node
               </div>
-              <div className="rounded-[1.2rem] border border-rose-100 bg-rose-50/80 px-3 py-3">
-                <div className="text-[10px] font-semibold tracking-[0.16em] text-rose-500 uppercase">
-                  相手
-                </div>
-                <div className="mt-1 line-clamp-2 text-xs font-medium text-foreground">
-                  {primaryRoleModel.currentNodeLabel}
-                </div>
+              <div className="mt-2 text-sm font-semibold text-foreground">
+                {primaryRoleModel.ownCurrentNodeLabel}
+              </div>
+              <div className="mt-3 flex items-center gap-1 text-xs text-muted-foreground">
+                <GitBranch className="size-3.5" />
+                <span className="truncate">
+                  {primaryRoleModel.ownBranchFrom}
+                </span>
+                <ArrowRight className="size-3.5 shrink-0" />
+                <span className="truncate">{primaryRoleModel.ownBranchTo}</span>
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="rounded-[1.35rem] border border-rose-100 bg-linear-to-br from-rose-50 via-white to-orange-50 px-4 py-4">
+              <div className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.16em] text-rose-500 uppercase">
+                <Star className="size-3.5" />
+                Role Model Node
+              </div>
+              <div className="mt-2 text-sm font-semibold text-foreground">
+                {primaryRoleModel.currentNodeLabel}
+              </div>
+              <div className="mt-3 flex items-center gap-1 text-xs text-muted-foreground">
+                <GitBranch className="size-3.5" />
+                <span className="truncate">
+                  {primaryRoleModel.roleModelBranchFrom}
+                </span>
+                <ArrowRight className="size-3.5 shrink-0" />
+                <span className="truncate">
+                  {primaryRoleModel.roleModelBranchTo}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[1.4rem] border border-indigo-200/80 bg-indigo-50/85 px-4 py-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-indigo-950">
+                  ホームで次の一手を聞く
+                </div>
+                <div className="mt-1 text-xs leading-relaxed text-indigo-900/70">
+                  自分の木と {primaryRoleModel.name}
+                  さんの木を比較して、今取りやすい行動を AI にまとめさせます。
+                </div>
+              </div>
               <Button
                 type="button"
                 size="sm"
                 onClick={handleGenerateAdvice}
                 disabled={isGeneratingAdvice}
-                className="flex-1 gap-2"
+                className="w-full gap-2 sm:w-auto"
               >
                 {isGeneratingAdvice ? (
                   <LoaderCircle className="animate-spin" />
                 ) : (
                   <Sparkles />
                 )}
-                AI相談
+                AIアドバイス
               </Button>
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="flex-1 gap-2"
-              >
-                <Link href={primaryRoleModel.profileHref}>
-                  詳細
-                  <ArrowRight />
-                </Link>
-              </Button>
-            </div>
-
-            {error ? (
-              <div className="rounded-[1.2rem] border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                {error}
-              </div>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <Button
-                asChild
-                variant="outline"
-                size="sm"
-                className="w-full shrink-0 gap-2 sm:w-auto"
-              >
-                <Link href={primaryRoleModel.profileHref}>
-                  詳細を見る
-                  <ArrowRight />
-                </Link>
-              </Button>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-          <div className="rounded-[1.35rem] border border-indigo-100 bg-linear-to-br from-slate-50 to-white px-4 py-4">
-            <div className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase">
-              <Compass className="size-3.5" />
-              Your Current Node
-            </div>
-            <div className="mt-2 text-sm font-semibold text-foreground">
-              {primaryRoleModel.ownCurrentNodeLabel}
-            </div>
-            <div className="mt-3 flex items-center gap-1 text-xs text-muted-foreground">
-              <GitBranch className="size-3.5" />
-              <span className="truncate">{primaryRoleModel.ownBranchFrom}</span>
-              <ArrowRight className="size-3.5 shrink-0" />
-              <span className="truncate">{primaryRoleModel.ownBranchTo}</span>
             </div>
           </div>
 
-          <div className="rounded-[1.35rem] border border-rose-100 bg-linear-to-br from-rose-50 via-white to-orange-50 px-4 py-4">
-            <div className="flex items-center gap-2 text-[11px] font-semibold tracking-[0.16em] text-rose-500 uppercase">
-              <Star className="size-3.5" />
-              Role Model Node
-            </div>
-            <div className="mt-2 text-sm font-semibold text-foreground">
-              {primaryRoleModel.currentNodeLabel}
-            </div>
-            <div className="mt-3 flex items-center gap-1 text-xs text-muted-foreground">
-              <GitBranch className="size-3.5" />
-              <span className="truncate">
-                {primaryRoleModel.roleModelBranchFrom}
-              </span>
-              <ArrowRight className="size-3.5 shrink-0" />
-              <span className="truncate">{primaryRoleModel.roleModelBranchTo}</span>
-            </div>
-          </div>
-        </div>
+          {advice ? <AdviceSection advice={advice} /> : null}
 
-            <div className="rounded-[1.4rem] border border-indigo-200/80 bg-indigo-50/85 px-4 py-4">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="text-sm font-semibold text-indigo-950">
-                    ホームで次の一手を聞く
-                  </div>
-                  <div className="mt-1 text-xs leading-relaxed text-indigo-900/70">
-                    自分の木と {primaryRoleModel.name}
-                    さんの木を比較して、今取りやすい行動を AI
-                    にまとめさせます。
-                  </div>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={handleGenerateAdvice}
-                  disabled={isGeneratingAdvice}
-                  className="w-full gap-2 sm:w-auto"
-                >
-                  {isGeneratingAdvice ? (
-                    <LoaderCircle className="animate-spin" />
-                  ) : (
-                    <Sparkles />
-                  )}
-                  AIアドバイス
-                </Button>
-              </div>
+          {error ? (
+            <div className="rounded-[1.2rem] border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {error}
             </div>
-
-            {advice ? <AdviceSection advice={advice} /> : null}
-
-            {error ? (
-              <div className="rounded-[1.2rem] border border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                {error}
-              </div>
-            ) : null}
-          </>
-        )}
+          ) : null}
+        </>
       </CardContent>
     </Card>
   )
