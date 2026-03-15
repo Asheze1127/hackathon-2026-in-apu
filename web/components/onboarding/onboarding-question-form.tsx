@@ -65,13 +65,13 @@ export function OnboardingQuestionForm() {
                 <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
                   1
                 </span>
-                現在、あなたが熱心に取り組んでいることは何ですか
+                現在、あなたの職業・立場は何ですか
               </FieldLabel>
               <InputGroup>
                 <InputGroupTextarea
                   {...field}
                   id="form-present"
-                  placeholder="大学生・社会人・フリーランスなど、なんでもいいので教えてください！"
+                  placeholder="大学生・社会人・フリーランスなど"
                   rows={5}
                   className="min-h-24 resize-none"
                   aria-invalid={fieldState.invalid}
@@ -96,13 +96,13 @@ export function OnboardingQuestionForm() {
                 <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
                   2
                 </span>
-                それに注力している理由を教えてください
+                その職業・立場におけるモチベーション・動機・課題などはなんですか
               </FieldLabel>
               <InputGroup>
                 <InputGroupTextarea
                   {...field}
                   id="form-reason"
-                  placeholder="モチベーションや背景など、なんでもいいので教えてください！"
+                  placeholder="何を頑張っていて何を目指しているのか、何に課題を感じているのかなど"
                   rows={5}
                   className="min-h-24 resize-none"
                   aria-invalid={fieldState.invalid}
