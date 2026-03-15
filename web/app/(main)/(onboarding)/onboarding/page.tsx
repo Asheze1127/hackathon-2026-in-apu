@@ -2,12 +2,32 @@ import Link from "next/link"
 
 import { PageLayout } from "@/components/shared/page-layout"
 import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+
+const currentStep = 1
 
 const Page = () => {
   return (
     <PageLayout>
       <div className="flex flex-col gap-4">
-        <p className="text-sm text-muted-foreground">ステップ 1 / 3</p>
+        <div className="flex items-center gap-2">
+          {[1, 2, 3].map((n) => (
+            <div
+              key={n}
+              className={cn(
+                "size-2 rounded-full transition-colors",
+                n === currentStep
+                  ? "bg-foreground"
+                  : n < currentStep
+                    ? "bg-foreground/40"
+                    : "bg-border"
+              )}
+            />
+          ))}
+          <span className="ml-2 text-sm text-muted-foreground">
+            ステップ {currentStep} / 3
+          </span>
+        </div>
         <h1 className="text-2xl font-bold tracking-tight md:text-4xl">
           はじめましょう 👋
         </h1>

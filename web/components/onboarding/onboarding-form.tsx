@@ -10,13 +10,6 @@ import { useForm, useWatch } from "react-hook-form"
 import { submitOnboardingForm } from "@/app/(main)/(onboarding)/onboarding/actions"
 import { ProfileSettingsSection } from "@/components/profile/profile-settings-section"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import { profileSettingsFormSchema } from "@/lib/profile/form-schema"
 import type { ProfileSettingsFormInput } from "@/lib/profile/form-schema"
 import type { OnboardingFormInput } from "@/lib/onboarding/form-schema"
@@ -49,13 +42,10 @@ function subscribeToOnboardingDraft(callback: () => void) {
 export function OnboardingForm({ userId }: OnboardingFormProps) {
   const router = useRouter()
   const [isAvatarUploading, setIsAvatarUploading] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
   const questionDraft = useSyncExternalStore<
     OnboardingQuestionInput | null | undefined
-  >(
-    subscribeToOnboardingDraft,
-    readOnboardingQuestionDraft,
-    () => undefined
-  )
+  >(subscribeToOnboardingDraft, readOnboardingQuestionDraft, () => undefined)
 
   const form = useForm<ProfileSettingsFormInput>({
     resolver: standardSchemaResolver(profileSettingsFormSchema),
@@ -68,6 +58,8 @@ export function OnboardingForm({ userId }: OnboardingFormProps) {
     },
   })
 
+  const { isSubmitting } = form.formState
+
   useEffect(() => {
     form.register("displayName")
     form.register("avatarUrl")
@@ -75,12 +67,10 @@ export function OnboardingForm({ userId }: OnboardingFormProps) {
     form.register("age")
     form.register("location")
 
-    if (questionDraft === null) {
+    if (questionDraft === null && !isSubmitting && !submitted) {
       router.replace("/onboarding/form")
     }
-  }, [form, questionDraft, router])
-
-  const { isSubmitting } = form.formState
+  }, [form, isSubmitting, questionDraft, router, submitted])
   const [displayName, avatarUrl, currentOccupation, age, location] = useWatch({
     control: form.control,
     name: ["displayName", "avatarUrl", "currentOccupation", "age", "location"],
@@ -98,6 +88,7 @@ export function OnboardingForm({ userId }: OnboardingFormProps) {
     }
 
     await submitOnboardingForm(payload)
+    setSubmitted(true)
     clearOnboardingQuestionDraft()
     router.push("/onboarding/done")
   }
@@ -112,81 +103,42 @@ export function OnboardingForm({ userId }: OnboardingFormProps) {
       onSubmit={form.handleSubmit(onSubmit)}
       className="flex flex-col gap-8"
     >
-      <Card size="sm" className="border border-border/80 bg-muted/20">
-        <CardHeader>
-          <CardTitle>さっき回答した内容</CardTitle>
-          <CardDescription>
-            回答を直したい場合は質問ページに戻れます。
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-            <div className="text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">
-              Question 1
-            </div>
-            <div className="mt-1 text-sm font-medium text-foreground">
-              {questionDraft.present}
-            </div>
-          </div>
-          <div className="rounded-2xl border border-border/70 bg-background px-4 py-3">
-            <div className="text-xs font-semibold tracking-[0.16em] text-muted-foreground uppercase">
-              Question 2
-            </div>
-            <div className="mt-1 text-sm font-medium text-foreground">
-              {questionDraft.reason}
-            </div>
-          </div>
-          <div className="flex justify-end">
-            <Button asChild variant="outline" size="sm">
-              <Link href="/onboarding/form">質問に戻る</Link>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      <ProfileSettingsSection
+        description="名前は他のユーザーに見える表示名です。残りの項目は任意です。"
+        disabled={isSubmitting}
+        errors={{
+          displayName: form.formState.errors.displayName?.message,
+          age: form.formState.errors.age?.message,
+          avatarUrl: form.formState.errors.avatarUrl?.message,
+          currentOccupation: form.formState.errors.currentOccupation?.message,
+          location: form.formState.errors.location?.message,
+        }}
+        onAvatarUploadingChange={setIsAvatarUploading}
+        onFieldChange={(field, value) => {
+          form.setValue(field, value, {
+            shouldDirty: true,
+            shouldValidate: true,
+          })
+        }}
+        title="今のあなたが伝わる情報"
+        userId={userId}
+        values={{
+          displayName: displayName ?? "",
+          age: age ?? "",
+          avatarUrl: avatarUrl ?? "",
+          currentOccupation: currentOccupation ?? "",
+          location: location ?? "",
+        }}
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>プロフィール設定</CardTitle>
-          <CardDescription>
-            名前は必須です。アイコン、職業、年齢、住んでいるところは任意で、あとからプロフィール画面でも編集できます。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ProfileSettingsSection
-            description="名前は他のユーザーに見える表示名です。残りの項目は任意です。"
-            disabled={isSubmitting}
-            errors={{
-              displayName: form.formState.errors.displayName?.message,
-              age: form.formState.errors.age?.message,
-              avatarUrl: form.formState.errors.avatarUrl?.message,
-              currentOccupation:
-                form.formState.errors.currentOccupation?.message,
-              location: form.formState.errors.location?.message,
-            }}
-            onAvatarUploadingChange={setIsAvatarUploading}
-            onFieldChange={(field, value) => {
-              form.setValue(field, value, {
-                shouldDirty: true,
-                shouldValidate: true,
-              })
-            }}
-            title="今のあなたが伝わる情報"
-            userId={userId}
-            values={{
-              displayName: displayName ?? "",
-              age: age ?? "",
-              avatarUrl: avatarUrl ?? "",
-              currentOccupation: currentOccupation ?? "",
-              location: location ?? "",
-            }}
-          />
-        </CardContent>
-      </Card>
-
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between">
+        <Button asChild variant="ghost" size="sm" className="-ml-3">
+          <Link href="/onboarding/form">← 質問に戻る</Link>
+        </Button>
         <Button
           type="submit"
           size="lg"
+          className="gap-2"
           disabled={isSubmitting || isAvatarUploading}
         >
           <CheckCircle2 className="size-4" />
@@ -194,7 +146,7 @@ export function OnboardingForm({ userId }: OnboardingFormProps) {
             ? "画像をアップロード中..."
             : isSubmitting
               ? "送信中..."
-              : "名前とプロフィールを保存して続ける"}
+              : "続ける"}
         </Button>
       </div>
     </form>
