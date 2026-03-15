@@ -16,7 +16,7 @@ function CircleNode({ data }: NodeProps<CircleNode>) {
   return (
     <div className="relative flex h-20 w-20 items-center justify-center rounded-full border border-border bg-white shadow-sm">
       <Handle type="target" position={Position.Top} />
-      <span className="max-w-15 truncate text-center text-xs font-medium text-foreground select-none">
+      <span className="max-w-15 text-center text-xs font-medium text-foreground select-none">
         {data.label}
       </span>
       <Handle type="source" position={Position.Bottom} />
@@ -55,14 +55,24 @@ const initialEdges = [
   { id: "n2-n3", source: "n2", target: "n3" },
 ]
 
-export default function Graph() {
+interface GraphProps {
+  nodes?: typeof initialNodes
+  edges?: typeof initialEdges
+  className?: string
+}
+
+export default function Graph({
+  nodes = initialNodes,
+  edges = initialEdges,
+  className,
+}: GraphProps) {
   return (
     <ReactFlow
-      nodes={initialNodes}
-      edges={initialEdges}
+      nodes={nodes}
+      edges={edges}
       nodeTypes={nodeTypes}
       fitView
-      className="fixed top-0"
+      className={className ?? "fixed top-0"}
     >
       <Controls position="top-right" />
       <Background color="#ccc" variant={BackgroundVariant.Dots} />
