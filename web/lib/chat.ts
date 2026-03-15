@@ -20,13 +20,18 @@ async function ensureRoomMembership(roomId: string, userId: string) {
   }
 }
 
-async function ensureDmModelRoom(userId: string, goal: string | null) {
+async function ensureDmModelRoom(
+  userId: string,
+  goal: string | null,
+  roomName = "Decision Path Mentor"
+) {
   const supabase = await createClient()
   const { data: existingRoom, error: selectError } = await supabase
     .from("chat_rooms")
     .select("id, goal")
     .eq("room_type", CHAT_ROOM_TYPES.dmModel)
     .eq("created_by", userId)
+    .eq("name", roomName)
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle()
@@ -42,7 +47,7 @@ async function ensureDmModelRoom(userId: string, goal: string | null) {
       .insert({
         created_by: userId,
         goal,
-        name: "Decision Path Mentor",
+        name: roomName,
         room_type: CHAT_ROOM_TYPES.dmModel,
       })
       .select("id")
@@ -65,6 +70,8 @@ async function ensureDmModelRoom(userId: string, goal: string | null) {
   }
 
   await ensureRoomMembership(roomId, userId)
+
+  return roomId
 }
 
 async function ensureGoalCommunityRoom(goal: string, userId: string) {
@@ -118,13 +125,44 @@ export async function ensureChatRoomsForCurrentUser() {
   const profile = await getProfile()
   const normalizedGoal = profile?.goal?.trim() || null
 
-  await ensureDmModelRoom(user.id, normalizedGoal)
+  const { data: existingDmRoom, error: existingDmRoomError } = await supabase
+    .from("chat_rooms")
+    .select("id")
+    .eq("room_type", CHAT_ROOM_TYPES.dmModel)
+    .eq("created_by", user.id)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (existingDmRoomError) {
+    throw new Error(existingDmRoomError.message)
+  }
+
+  if (!existingDmRoom) {
+    await ensureDmModelRoom(user.id, normalizedGoal)
+  }
 
   if (!normalizedGoal) {
     return
   }
 
   await ensureGoalCommunityRoom(normalizedGoal, user.id)
+}
+
+export async function getOrCreateModelChatRoomForCurrentUser(roomName: string) {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return null
+  }
+
+  const profile = await getProfile()
+  const normalizedGoal = profile?.goal?.trim() || null
+
+  return ensureDmModelRoom(user.id, normalizedGoal, roomName)
 }
 
 export async function listChatRoomsForCurrentUser(): Promise<

@@ -5,7 +5,7 @@ import { List, TreeDeciduous, MessageCircle } from "lucide-react"
 const TABS = [
   { Icon: List, label: "歩んだ道" },
   { Icon: TreeDeciduous, label: "ツリー" },
-  { Icon: MessageCircle, label: "AIチャット" },
+  { Icon: MessageCircle, label: "DM" },
 ]
 
 interface ProfileSegmentControlProps {

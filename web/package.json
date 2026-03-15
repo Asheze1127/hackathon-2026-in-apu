@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit --incremental false",
     "postinstall": "prisma generate",
     "prepare": "cd .. && husky web/.husky",
     "supabase:types": "supabase gen types typescript --project-id vnejrbqnpsrrrossrafy > lib/supabase/database.types.ts"

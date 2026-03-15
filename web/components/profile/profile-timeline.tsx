@@ -76,13 +76,13 @@ export function ProfileTimeline({
           <Bot size={18} color="white" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-bold">{name} AIと話してみよう</div>
+          <div className="text-sm font-bold">{name}さんに相談してみよう</div>
           <div className="mt-0.5 text-xs text-muted-foreground">
-            キャリアの選択理由や悩みを本人に質問できます。
+            キャリアの選択理由や悩みをチャットで相談できます。
           </div>
         </div>
         <Button size="sm" onClick={onStartChat} className="shrink-0 gap-1">
-          話す <ArrowRight size={13} />
+          DMへ <ArrowRight size={13} />
         </Button>
       </div>
     </div>
