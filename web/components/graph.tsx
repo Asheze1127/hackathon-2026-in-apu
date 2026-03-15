@@ -23,6 +23,7 @@ import {
   GraphNodeAddDialog,
   type GraphNodeAddDraft,
 } from "@/components/graph-node-add-dialog"
+import { Info } from "lucide-react"
 import { useGraphState } from "@/hooks/use-graph-state"
 import type { GraphTreeData } from "@/lib/user-tree"
 
@@ -104,6 +105,7 @@ export default function Graph({
   >(null)
   const [isSuggesting, startSuggestionTransition] = useTransition()
   const [isOverlayVisible, setIsOverlayVisible] = useState(false)
+  const [isInfoExpanded, setIsInfoExpanded] = useState(false)
   const [viewport, setViewport] = useState<Viewport>({
     x: 0,
     y: 0,
@@ -582,8 +584,19 @@ export default function Graph({
           </div>
         ) : null}
         {!isUsingMockData && !isLoading ? (
-          <div className="rounded-full border border-border/80 bg-card/95 px-3 py-1 text-xs font-medium text-muted-foreground shadow-sm">
-            ノード上部で未来、下部で過去を追加。ノード本体を押すと未来候補を最大5本、各3手先まで表示します
+          <div className="pointer-events-auto flex flex-col gap-1">
+            <button
+              type="button"
+              onClick={() => setIsInfoExpanded((v) => !v)}
+              className="flex h-7 w-7 items-center justify-center rounded-full border border-border/80 bg-card/95 text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <Info size={14} />
+            </button>
+            {isInfoExpanded ? (
+              <div className="max-w-xs rounded-2xl border border-border/80 bg-card/95 px-3 py-2 text-xs font-medium text-muted-foreground shadow-sm">
+                ノード上部で未来、下部で過去を追加。ノード本体を押すと未来候補を最大5本、各3手先まで表示します
+              </div>
+            ) : null}
           </div>
         ) : null}
         {errorMessage ? (
