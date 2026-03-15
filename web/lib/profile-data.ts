@@ -1,4 +1,6 @@
+import type { Edge } from "@xyflow/react"
 import type { LucideIcon } from "lucide-react"
+import type { CircleNode } from "@/components/circle-node"
 import {
   Star,
   RefreshCcw,
@@ -43,13 +45,8 @@ export type RoleModel = {
   branchFrom: string
   branchTo: string
   timelineItems: TimelineItem[]
-  profileNodes: {
-    id: string
-    type: string
-    position: { x: number; y: number }
-    data: { label: string }
-  }[]
-  profileEdges: { id: string; source: string; target: string }[]
+  profileNodes: CircleNode[]
+  profileEdges: Edge[]
   initialMessages: Message[]
 }
 
