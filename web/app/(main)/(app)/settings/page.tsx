@@ -1,14 +1,19 @@
 import { LogoutButton } from "@/components/auth/logout-button"
 import { GraphTabBar } from "@/components/nav/tabbar"
+import { PageLayout } from "@/components/shared/page-layout"
+import { Separator } from "@/components/ui/separator"
 
 const Page = () => {
   return (
-    <div className="">
-      <div className="mx-auto flex w-full max-w-3xl items-center justify-center py-6">
-        <LogoutButton />
+    <PageLayout className="">
+      <div className="flex flex-col gap-4">
+        <h1 className="text-4xl font-bold tracking-tight">設定</h1>
       </div>
+      <Separator className="my-4" />
+      <LogoutButton />
+
       <GraphTabBar />
-    </div>
+    </PageLayout>
   )
 }
 

@@ -1,16 +1,17 @@
+import { PageLayout } from "@/components/shared/page-layout"
 import { OnboardingForm } from "@/components/onboarding/onboarding-form"
 
 const Page = () => {
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-10 px-4 py-24">
+    <PageLayout>
       <div className="flex flex-col gap-4">
         <p className="text-sm text-muted-foreground">ステップ 2 / 2</p>
-        <h1 className="text-4xl font-bold tracking-tight">
+        <h1 className="text-2xl font-bold tracking-tight md:text-4xl">
           あなたについて教えてください
         </h1>
       </div>
       <OnboardingForm />
-    </div>
+    </PageLayout>
   )
 }
 
