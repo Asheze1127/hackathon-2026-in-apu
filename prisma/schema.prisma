@@ -1,0 +1,89 @@
+// Decision Path - Prisma Schema
+// DB: Supabase (PostgreSQL)
+// Auth: Supabase Auth (auth.users)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// auth.users の拡張。アプリ固有情報のみ持つ。
+model Profile {
+  id        String   @id @db.Uuid                  // auth.users.id と同値
+  goal      String?  @db.Text                      // ユーザーの最終目標
+  onboarded Boolean  @default(false)               // 初回アンケート完了フラグ
+  createdAt DateTime @default(now()) @map("created_at")
+
+  nodes Node[]
+
+  @@map("profiles")
+}
+
+// realTag・emotionalTag で共通利用するタグマスタ。運営がシードで投入。
+model Tag {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(100)    // タグ名（例：大学進学、挑戦）
+  type        String   @db.VarChar(20)             // "real" | "emotional"
+  description String?  @db.Text                   // タグの説明
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([type])
+  @@index([name])
+  @@map("tags")
+}
+
+// 意思決定の背景・価値観を引き出す抽象的な質問マスタ。運営がシードで投入。
+model AbstractQuestion {
+  id          String   @id @default(uuid()) @db.Uuid
+  question    String   @db.Text                   // 質問文
+  description String?  @db.Text                   // 質問文を生成した理由などを入れる。
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  nodes Node[]
+
+  @@map("abstract_questions")
+}
+
+// 実際の選択・行動を問う具体的な質問マスタ。運営がシードで投入。
+model ConcreteQuestion {
+  id          String   @id @default(uuid()) @db.Uuid
+  question    String   @db.Text                   // 質問文
+  description String?  @db.Text                   // 回答のヒント
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  nodes Node[]
+
+  @@map("concrete_questions")
+}
+
+// ユーザーの意思決定ログ。1レコード = 木の1ノード。parent_id で親子関係を表現する。
+// real_tags / emotional_tags は Tag.id の UUID 配列を JSONB で保持。
+// GIN インデックスは Supabase SQL エディタで別途作成すること:
+//   CREATE INDEX idx_nodes_real_tags ON nodes USING GIN (real_tags);
+//   CREATE INDEX idx_nodes_emotional_tags ON nodes USING GIN (emotional_tags);
+model Node {
+  id                 String   @id @default(uuid()) @db.Uuid
+  userId             String   @db.Uuid @map("user_id")              // ノードの所有者（RLS で制御）
+  concreteQuestionId String   @db.Uuid @map("concrete_question_id") // 答えた具体質問
+  abstractQuestionId String?  @db.Uuid @map("abstract_question_id") // 付属する抽象質問（任意）
+  concreteAnswer     String   @db.Text @map("concrete_answer")       // 具体質問への回答
+  abstractAnswer     String?  @db.Text @map("abstract_answer")       // 抽象質問への回答
+  realTags           Json     @default("[]") @map("real_tags")       // 事実タグ ID 配列
+  emotionalTags      Json     @default("[]") @map("emotional_tags")  // 感情タグ ID 配列（類似ユーザー検索に使用）
+  visualState        String?  @db.VarChar(50) @map("visual_state")  // 3D 可視化用の状態値（P3）
+  parentId           String?  @db.Uuid @map("parent_id")            // 親ノード ID。NULL = ルート
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  profile          Profile           @relation(fields: [userId], references: [id])
+  concreteQuestion ConcreteQuestion  @relation(fields: [concreteQuestionId], references: [id])
+  abstractQuestion AbstractQuestion? @relation(fields: [abstractQuestionId], references: [id])
+  parent           Node?             @relation("NodeTree", fields: [parentId], references: [id])
+  children         Node[]            @relation("NodeTree")
+
+  @@index([userId])
+  @@index([parentId])
+  @@map("nodes")
+}
