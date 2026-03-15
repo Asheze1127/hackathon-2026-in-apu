@@ -85,13 +85,13 @@ function GhostAddNodeButton({
         }}
         onClick={onClick}
       >
-        <div className="flex items-center gap-1 text-[10px] font-semibold tracking-[0.18em]">
-          <ArrowIcon className="size-3" />
+        <div className="flex items-center gap-1 text-[8px] font-semibold">
+          <ArrowIcon className="size-2" />
           <span>{isFuture ? "FUTURE" : "PAST"}</span>
         </div>
-        <div className="mt-1 flex items-center gap-1 text-[11px] font-bold">
-          <Plus className="size-3.5" />
-          <span>{isFuture ? "追加" : "追加"}</span>
+        <div className="mt-1 flex items-center gap-1 text-[8px] font-bold">
+          <Plus className="size-2" />
+          追加
         </div>
       </button>
     </>
