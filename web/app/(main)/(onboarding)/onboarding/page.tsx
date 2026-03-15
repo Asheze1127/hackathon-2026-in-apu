@@ -12,7 +12,7 @@ const Page = () => {
           はじめましょう 👋
         </h1>
         <p className="leading-relaxed text-muted-foreground">
-          まずはあなたのことを少し教えてください。
+          まずはあなたのことを少し教えてください。名前は必須ですが、プロフィール写真や住んでいる場所はあとで設定しても大丈夫です。
         </p>
       </div>
       <div className="flex justify-end">

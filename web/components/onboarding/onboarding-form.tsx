@@ -1,16 +1,21 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema"
+import { CheckCircle2 } from "lucide-react"
 import { useRouter } from "next/navigation"
-import { Controller, useForm } from "react-hook-form"
+import { Controller, useForm, useWatch } from "react-hook-form"
 
 import { submitOnboardingForm } from "@/app/(main)/(onboarding)/onboarding/actions"
-import {
-  formSchema,
-  type OnboardingFormInput,
-} from "@/lib/onboarding/form-schema"
-
+import { ProfileSettingsSection } from "@/components/profile/profile-settings-section"
 import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import {
   Field,
   FieldError,
@@ -23,28 +28,82 @@ import {
   InputGroupText,
   InputGroupTextarea,
 } from "@/components/ui/input-group"
+import {
+  formSchema,
+  type OnboardingFormInput,
+} from "@/lib/onboarding/form-schema"
 
-export function OnboardingForm() {
+interface OnboardingFormProps {
+  userId: string
+}
+
+export function OnboardingForm({ userId }: OnboardingFormProps) {
   const router = useRouter()
+  const [isAvatarUploading, setIsAvatarUploading] = useState(false)
+
   const form = useForm<OnboardingFormInput>({
     resolver: standardSchemaResolver(formSchema),
     defaultValues: {
+      displayName: "",
+      age: "",
+      avatarUrl: "",
+      currentOccupation: "",
+      location: "",
       present: "",
       reason: "",
     },
   })
 
-  const { isSubmitting } = form.formState
+  useEffect(() => {
+    form.register("displayName")
+    form.register("avatarUrl")
+    form.register("currentOccupation")
+    form.register("age")
+    form.register("location")
+  }, [form])
 
-  async function onSubmit(data: OnboardingFormInput) {
-    await submitOnboardingForm(data)
+  const { isSubmitting } = form.formState
+  const [displayName, avatarUrl, currentOccupation, age, location] = useWatch({
+    control: form.control,
+    name: ["displayName", "avatarUrl", "currentOccupation", "age", "location"],
+  })
+
+  async function onSubmit(
+    data: OnboardingFormInput,
+    options?: { saveProfile?: boolean }
+  ) {
+    await submitOnboardingForm(data, options)
     router.push("/onboarding/done")
+  }
+
+  async function handleSkipProfile() {
+    form.setValue("avatarUrl", "", { shouldDirty: true, shouldValidate: false })
+    form.setValue("currentOccupation", "", {
+      shouldDirty: true,
+      shouldValidate: false,
+    })
+    form.setValue("age", "", { shouldDirty: true, shouldValidate: false })
+    form.setValue("location", "", {
+      shouldDirty: true,
+      shouldValidate: false,
+    })
+    form.clearErrors(["avatarUrl", "currentOccupation", "age", "location"])
+
+    await form.handleSubmit(async (data) => {
+      await onSubmit(data, {
+        saveProfile: false,
+      })
+    })()
   }
 
   return (
     <form
       id="onboarding-form"
-      onSubmit={form.handleSubmit(onSubmit)}
+      onSubmit={form.handleSubmit(async (data) => {
+        await onSubmit(data, {
+          saveProfile: true,
+        })
+      })}
       className="flex flex-col gap-8"
     >
       <FieldGroup>
@@ -109,9 +168,69 @@ export function OnboardingForm() {
           )}
         />
       </FieldGroup>
-      <div className="flex justify-end">
-        <Button type="submit" size="lg" disabled={isSubmitting}>
-          {isSubmitting ? "送信中..." : "続ける →"}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>プロフィール設定</CardTitle>
+          <CardDescription>
+            名前は必須です。アイコン、職業、年齢、住んでいるところはあとからプロフィール画面でも編集できます。
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ProfileSettingsSection
+            description="名前は他のユーザーに見える表示名です。その他の項目は不要ならスキップできます。"
+            disabled={isSubmitting}
+            errors={{
+              displayName: form.formState.errors.displayName?.message,
+              age: form.formState.errors.age?.message,
+              avatarUrl: form.formState.errors.avatarUrl?.message,
+              currentOccupation:
+                form.formState.errors.currentOccupation?.message,
+              location: form.formState.errors.location?.message,
+            }}
+            onAvatarUploadingChange={setIsAvatarUploading}
+            onFieldChange={(field, value) => {
+              form.setValue(field, value, {
+                shouldDirty: true,
+                shouldValidate: true,
+              })
+            }}
+            title="今のあなたが伝わる情報"
+            userId={userId}
+            values={{
+              displayName: displayName ?? "",
+              age: age ?? "",
+              avatarUrl: avatarUrl ?? "",
+              currentOccupation: currentOccupation ?? "",
+              location: location ?? "",
+            }}
+          />
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+        <Button
+          type="button"
+          variant="outline"
+          size="lg"
+          disabled={isSubmitting || isAvatarUploading}
+          onClick={() => {
+            void handleSkipProfile()
+          }}
+        >
+          名前だけ保存して続ける
+        </Button>
+        <Button
+          type="submit"
+          size="lg"
+          disabled={isSubmitting || isAvatarUploading}
+        >
+          <CheckCircle2 className="size-4" />
+          {isAvatarUploading
+            ? "画像をアップロード中..."
+            : isSubmitting
+              ? "送信中..."
+              : "名前とプロフィールを保存して続ける"}
         </Button>
       </div>
     </form>

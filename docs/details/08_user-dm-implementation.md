@@ -113,21 +113,26 @@ Prisma schema だけでは表現しづらいため、migration SQL で追加す�
 
 実ユーザー DM を自然に見せるには、`profiles` だけでは情報が足りない。
 
-現在の `profiles` は以下しか持っていない。
+現在の `profiles` には以下がある。
 
 - `id`
+- `display_name`
+- `avatar_url`
+- `current_occupation`
+- `age`
+- `location`
 - `goal`
 - `onboarded`
 - `created_at`
 
-そのため、プロフィール画面や DM 一覧で相手を識別するために、最低でも次のいずれかが必要になる。
+ただし、過去の既存ユーザーには `display_name` が未設定の可能性がある。  
+そのため、最低でも次のいずれかが必要になる。
 
 ### 選択肢 A
 
 `profiles` に表示用カラムを追加する。
 
 - `display_name`
-- `avatar_url`
 - `bio`（任意）
 
 ### 選択肢 B

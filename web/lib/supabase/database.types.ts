@@ -238,21 +238,36 @@ export type Database = {
       }
       profiles: {
         Row: {
+          age: number | null
+          avatar_url: string | null
           created_at: string
+          current_occupation: string | null
+          display_name: string | null
           goal: string | null
           id: string
+          location: string | null
           onboarded: boolean
         }
         Insert: {
+          age?: number | null
+          avatar_url?: string | null
           created_at?: string
+          current_occupation?: string | null
+          display_name?: string | null
           goal?: string | null
           id: string
+          location?: string | null
           onboarded?: boolean
         }
         Update: {
+          age?: number | null
+          avatar_url?: string | null
           created_at?: string
+          current_occupation?: string | null
+          display_name?: string | null
           goal?: string | null
           id?: string
+          location?: string | null
           onboarded?: boolean
         }
         Relationships: []

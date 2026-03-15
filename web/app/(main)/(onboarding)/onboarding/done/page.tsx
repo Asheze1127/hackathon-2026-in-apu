@@ -11,7 +11,7 @@ const Page = () => {
           ありがとうございます 🎉
         </h1>
         <p className="leading-relaxed text-muted-foreground">
-          プロフィールが登録されました。さっそくあなたのツリーを見てみましょう！
+          オンボーディングが完了しました。さっそくあなたのツリーを見てみましょう。
         </p>
       </div>
       <div className="flex justify-end">
