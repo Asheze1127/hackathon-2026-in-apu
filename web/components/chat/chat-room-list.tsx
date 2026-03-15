@@ -17,8 +17,12 @@ const formatter = new Intl.DateTimeFormat("ja-JP", {
   month: "numeric",
 })
 
-function getRoomIcon(roomType: string) {
-  if (roomType === CHAT_ROOM_TYPES.dmModel) {
+function getRoomIcon(room: ChatRoomSummary) {
+  if (room.peerProfile) {
+    return MessageCircle
+  }
+
+  if (room.room_type === CHAT_ROOM_TYPES.dmModel) {
     return Sparkles
   }
 
@@ -30,8 +34,15 @@ function getRoomDescription(room: ChatRoomSummary) {
     return room.latestMessage.content
   }
 
+  if (room.peerProfile) {
+    return (
+      room.peerProfile.current_occupation ??
+      "1対1のダイレクトメッセージをここから始められます。"
+    )
+  }
+
   if (room.room_type === CHAT_ROOM_TYPES.dmModel) {
-    return "ロールモデルとの会話をここから始められます。"
+    return "1対1のチャットをここから始められます。"
   }
 
   return "同じ goal を持つメンバーと会話できます。"
@@ -65,7 +76,7 @@ export function ChatRoomList({ rooms }: { rooms: ChatRoomSummary[] }) {
   return (
     <div className="flex flex-col gap-4">
       {rooms.map((room) => {
-        const Icon = getRoomIcon(room.room_type)
+        const Icon = getRoomIcon(room)
         const latestTimestamp =
           room.latestMessage?.created_at ?? room.created_at
 
@@ -79,12 +90,14 @@ export function ChatRoomList({ rooms }: { rooms: ChatRoomSummary[] }) {
                       <Icon className="size-5" />
                     </div>
                     <div className="space-y-1">
-                      <CardTitle className="text-lg">{room.name}</CardTitle>
+                      <CardTitle className="text-lg">
+                        {room.resolvedName}
+                      </CardTitle>
                       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                         <span className="rounded-full bg-muted px-2 py-1 font-medium tracking-[0.16em] text-foreground/80 uppercase">
                           {getRoomTypeLabel(room.room_type)}
                         </span>
-                        {room.goal ? (
+                        {!room.peerProfile && room.goal ? (
                           <span className="rounded-full border border-border px-2 py-1">
                             {room.goal}
                           </span>

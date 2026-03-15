@@ -4,9 +4,19 @@ import type { Edge, Node } from "@xyflow/react"
 const NODE_W = 80
 const NODE_H = 80
 
-export function applyLayout(nodes: Node[], edges: Edge[]) {
+export function applyLayout(
+  nodes: Node[],
+  edges: Edge[],
+  options?: {
+    rankdir?: "TB" | "BT" | "LR" | "RL"
+  }
+) {
   const g = new Dagre.graphlib.Graph().setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: "TB", nodesep: 60, ranksep: 80 })
+  g.setGraph({
+    rankdir: options?.rankdir ?? "TB",
+    nodesep: 60,
+    ranksep: 80,
+  })
   nodes.forEach((n) => g.setNode(n.id, { width: NODE_W, height: NODE_H }))
   edges.forEach((e) => g.setEdge(e.source, e.target))
   Dagre.layout(g)

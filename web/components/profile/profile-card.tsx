@@ -20,7 +20,7 @@ interface ProfileCardProps {
   years: string
   branchFrom: string
   branchTo: string
-  chatHref: string
+  dmHref: string
 }
 
 export function ProfileCard({
@@ -32,7 +32,7 @@ export function ProfileCard({
   years,
   branchFrom,
   branchTo,
-  chatHref,
+  dmHref,
 }: ProfileCardProps) {
   return (
     <Card size="sm">
@@ -86,7 +86,7 @@ export function ProfileCard({
         </div>
 
         <Button asChild className="w-full gap-2" size="sm">
-          <Link href={chatHref}>
+          <Link href={dmHref}>
             <MessageSquare size={15} />
             DMを送る
           </Link>
