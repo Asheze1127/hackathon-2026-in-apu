@@ -47,9 +47,31 @@ export type Database = {
         }
         Relationships: []
       }
+      abstract_questions: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          question: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id: string
+          question: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          question?: string
+        }
+        Relationships: []
+      }
       nodes: {
         Row: {
           abstract_answer: string | null
+          abstract_question_id: string | null
           concrete_answer: string
           created_at: string
           emotional_tags: Json
@@ -61,6 +83,7 @@ export type Database = {
         }
         Insert: {
           abstract_answer?: string | null
+          abstract_question_id?: string | null
           concrete_answer: string
           created_at?: string
           emotional_tags?: Json
@@ -72,6 +95,7 @@ export type Database = {
         }
         Update: {
           abstract_answer?: string | null
+          abstract_question_id?: string | null
           concrete_answer?: string
           created_at?: string
           emotional_tags?: Json
@@ -82,6 +106,13 @@ export type Database = {
           visual_state?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "nodes_abstract_question_id_fkey"
+            columns: ["abstract_question_id"]
+            isOneToOne: false
+            referencedRelation: "abstract_questions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "nodes_parent_id_fkey"
             columns: ["parent_id"]
