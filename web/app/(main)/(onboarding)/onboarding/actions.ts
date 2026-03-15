@@ -1,22 +1,14 @@
 "use server"
 
-import { PrismaClient, type Prisma } from "@prisma/client"
+import { type Prisma } from "@prisma/client"
 import { ZodError } from "zod"
 
 import {
   formSchema,
   type OnboardingFormInput,
 } from "@/lib/onboarding/form-schema"
+import prisma from "@/lib/prisma/client"
 import { createClient } from "@/lib/supabase/server"
-
-declare global {
-  var prisma: PrismaClient | undefined
-}
-
-const prisma = globalThis.prisma ?? new PrismaClient()
-if (process.env.NODE_ENV !== "production") {
-  globalThis.prisma = prisma
-}
 
 class OnboardingActionError extends Error {
   constructor(
@@ -104,8 +96,8 @@ export async function submitOnboardingForm(data: unknown) {
             parentId: null,
             concreteAnswer: normalized.concreteAnswer,
             abstractAnswer: normalized.abstractAnswer,
-            realTags: [],
-            emotionalTags: [],
+            realTags: [], //TODO: AIでタグ付け
+            emotionalTags: [], //TODO: AIでタグ付け
           },
           select: {
             id: true,
