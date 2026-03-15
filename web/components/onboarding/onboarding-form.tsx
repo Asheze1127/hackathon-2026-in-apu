@@ -1,11 +1,13 @@
 "use client"
 
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema"
+import { useRouter } from "next/navigation"
 import { Controller, useForm } from "react-hook-form"
 import * as z from "zod"
 
 import { submitOnboardingForm } from "@/app/(main)/onboarding/actions"
 
+import { Button } from "@/components/ui/button"
 import {
   Field,
   FieldError,
@@ -24,23 +26,27 @@ const formSchema = z.object({
     .string()
     .min(1, "テキストは必須です。")
     .max(100, "テキストは100文字以内で入力してください。"),
-  description: z
+  reason: z
     .string()
     .min(1, "テキストは必須です。")
     .max(100, "テキストは100文字以内で入力してください。"),
 })
 
 export function OnboardingForm() {
+  const router = useRouter()
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: standardSchemaResolver(formSchema),
     defaultValues: {
       present: "",
-      description: "",
+      reason: "",
     },
   })
 
+  const { isSubmitting } = form.formState
+
   async function onSubmit(data: z.infer<typeof formSchema>) {
     await submitOnboardingForm(data)
+    router.push("/onboarding/done")
   }
 
   return (
@@ -81,7 +87,7 @@ export function OnboardingForm() {
           )}
         />
         <Controller
-          name="description"
+          name="reason"
           control={form.control}
           render={({ field, fieldState }) => (
             <Field data-invalid={fieldState.invalid}>
@@ -111,6 +117,11 @@ export function OnboardingForm() {
           )}
         />
       </FieldGroup>
+      <div className="flex justify-end">
+        <Button type="submit" size="lg" disabled={isSubmitting}>
+          {isSubmitting ? "送信中..." : "続ける →"}
+        </Button>
+      </div>
     </form>
   )
 }

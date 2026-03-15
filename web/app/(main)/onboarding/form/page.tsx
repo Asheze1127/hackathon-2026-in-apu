@@ -1,4 +1,3 @@
-import { Button } from "@/components/ui/button"
 import { OnboardingForm } from "@/components/onboarding/onboarding-form"
 
 const Page = () => {
@@ -11,11 +10,6 @@ const Page = () => {
         </h1>
       </div>
       <OnboardingForm />
-      <div className="flex justify-end gap-3">
-        <Button type="submit" form="onboarding-form" size="lg">
-          続ける →
-        </Button>
-      </div>
     </div>
   )
 }
