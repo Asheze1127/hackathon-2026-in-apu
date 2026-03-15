@@ -2,10 +2,11 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, Settings, Star } from "lucide-react"
+import { Home, MessageCircle, Settings, Star } from "lucide-react"
 
 const tabs = [
   { label: "ホーム", href: "/", icon: Home },
+  { label: "チャット", href: "/chat", icon: MessageCircle },
   { label: "ロールモデル", href: "/rolemodel", icon: Star },
   { label: "設定", href: "/settings", icon: Settings },
 ]

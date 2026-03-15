@@ -7,6 +7,7 @@ import {
   ArrowRight,
   MessageSquare,
 } from "lucide-react"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 
@@ -19,6 +20,7 @@ interface ProfileCardProps {
   years: string
   branchFrom: string
   branchTo: string
+  chatHref: string
 }
 
 export function ProfileCard({
@@ -30,6 +32,7 @@ export function ProfileCard({
   years,
   branchFrom,
   branchTo,
+  chatHref,
 }: ProfileCardProps) {
   return (
     <Card size="sm">
@@ -82,9 +85,11 @@ export function ProfileCard({
           </div>
         </div>
 
-        <Button className="w-full gap-2" size="sm">
-          <MessageSquare size={15} />
-          DMを送る
+        <Button asChild className="w-full gap-2" size="sm">
+          <Link href={chatHref}>
+            <MessageSquare size={15} />
+            DMを送る
+          </Link>
         </Button>
       </CardContent>
     </Card>

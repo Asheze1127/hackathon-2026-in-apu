@@ -20,6 +20,9 @@ model Profile {
   createdAt DateTime @default(now()) @map("created_at")
 
   nodes Node[]
+  chatRoomsCreated ChatRoom[]       @relation("ChatRoomCreator")
+  chatRoomMembers  ChatRoomMember[]
+  messages         Message[]
 
   @@map("profiles")
 }
@@ -75,4 +78,50 @@ model Node {
   @@index([userId])
   @@index([parentId])
   @@map("nodes")
+}
+
+model ChatRoom {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.Text
+  roomType  String   @map("room_type") @db.VarChar(20)
+  createdBy String   @map("created_by") @db.Uuid
+  goal      String?  @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  creator Profile          @relation("ChatRoomCreator", fields: [createdBy], references: [id])
+  members ChatRoomMember[]
+  messages Message[]
+
+  @@index([roomType])
+  @@index([goal])
+  @@index([createdBy])
+  @@map("chat_rooms")
+}
+
+model ChatRoomMember {
+  roomId   String   @map("room_id") @db.Uuid
+  userId   String   @map("user_id") @db.Uuid
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  room ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, userId])
+  @@index([userId])
+  @@map("chat_room_members")
+}
+
+model Message {
+  id        String   @id @default(uuid()) @db.Uuid
+  roomId    String   @map("room_id") @db.Uuid
+  senderId  String   @map("sender_id") @db.Uuid
+  content   String   @db.Text
+  createdAt DateTime @default(now()) @map("created_at")
+
+  room   ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender Profile  @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, createdAt])
+  @@index([senderId])
+  @@map("messages")
 }
