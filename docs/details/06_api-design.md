@@ -315,6 +315,9 @@ Content-Type: application/json
 5. レスポンス返却
 ```
 
+`realTags` / `emotionalTags` に保存する値はタグ名ではなく `tags.id` の UUID。
+ノード同士の類似検索は UUID 配列の重なりで行い、タグ名の部分一致検索が必要な場合は `tags` テーブルを先に検索して `id` を解決してから `nodes` を絞り込む。
+
 #### Response `201 Created`
 
 ```json

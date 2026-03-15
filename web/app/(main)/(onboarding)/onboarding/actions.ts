@@ -5,6 +5,7 @@ import {
   type OnboardingFormInput,
 } from "@/lib/onboarding/form-schema"
 import { AppActionError, mapUnknownToAppActionError } from "@/lib/errors"
+import { classifyOnboardingTags } from "@/lib/onboarding/tagging"
 import { createClient } from "@/lib/supabase/server"
 
 function normalizeInput(input: OnboardingFormInput) {
@@ -28,6 +29,27 @@ export async function submitOnboardingForm(data: unknown) {
   try {
     const parsed = formSchema.parse(data)
     const normalized = normalizeInput(parsed)
+
+    const tags = await classifyOnboardingTags({
+      concreteAnswer: normalized.concreteAnswer,
+      abstractAnswer: normalized.abstractAnswer,
+    }).catch((error: unknown) => {
+      console.warn("[onboarding] tag classification failed", {
+        userId: user.id,
+        originalError:
+          error instanceof Error
+            ? {
+                message: error.message,
+                name: error.name,
+              }
+            : error,
+      })
+
+      return {
+        realTagIds: [],
+        emotionalTagIds: [],
+      }
+    })
 
     const { error: profileUpsertError } = await supabase
       .from("profiles")
@@ -54,8 +76,8 @@ export async function submitOnboardingForm(data: unknown) {
         parent_id: null,
         concrete_answer: normalized.concreteAnswer,
         abstract_answer: normalized.abstractAnswer,
-        real_tags: [],
-        emotional_tags: [],
+        real_tags: tags.realTagIds,
+        emotional_tags: tags.emotionalTagIds,
       })
       .select(
         "id, parent_id, concrete_answer, abstract_answer, real_tags, emotional_tags, created_at"
@@ -96,6 +118,8 @@ export async function submitOnboardingForm(data: unknown) {
       userId: user.id,
       concreteAnswerLength: normalized.concreteAnswer.length,
       abstractAnswerLength: normalized.abstractAnswer?.length ?? 0,
+      realTagCount: tags.realTagIds.length,
+      emotionalTagCount: tags.emotionalTagIds.length,
     })
 
     return result

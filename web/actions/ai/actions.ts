@@ -7,7 +7,7 @@ import type {
 } from "./types"
 
 /**
- * Server Action: call AI chat completion (OpenRouter or campus).
+ * Server Action: call AI chat completion (OpenRouter, Gemini, or campus).
  * Use from hooks; API keys stay on server.
  */
 export async function createChatCompletion(
