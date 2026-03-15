@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils"
 const biz_udpgothic = BIZ_UDPGothic({
   variable: "--font-sans",
   subsets: ["latin"],
-  weight: ["400"],
+  weight: ["400", "700"],
 })
 
 const fontMono = Geist_Mono({

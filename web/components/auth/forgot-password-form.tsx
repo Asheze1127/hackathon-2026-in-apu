@@ -15,6 +15,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import Link from "next/link"
+import { defaultPatterns } from "web-haptics"
+import { useWebHaptics } from "web-haptics/react"
 
 export function ForgotPasswordForm({
   className,
@@ -24,6 +26,7 @@ export function ForgotPasswordForm({
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const { trigger } = useWebHaptics()
 
   const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -37,9 +40,11 @@ export function ForgotPasswordForm({
         redirectTo: `${window.location.origin}/auth/update-password`,
       })
       if (error) throw error
+      await trigger(defaultPatterns.success)
       setSuccess(true)
     } catch (error: unknown) {
       setError(error instanceof Error ? error.message : "エラーが発生しました")
+      await trigger(defaultPatterns.error)
     } finally {
       setIsLoading(false)
     }
@@ -84,7 +89,14 @@ export function ForgotPasswordForm({
                   />
                 </div>
                 {error && <p className="text-sm text-red-500">{error}</p>}
-                <Button type="submit" className="w-full" disabled={isLoading}>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isLoading}
+                  onClick={() => {
+                    void trigger(defaultPatterns.selection)
+                  }}
+                >
                   {isLoading ? "送信中..." : "再設定メールを送信"}
                 </Button>
               </div>
