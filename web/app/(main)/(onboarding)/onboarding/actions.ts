@@ -17,8 +17,7 @@ function normalizeInput(input: OnboardingFormInput) {
 }
 
 export async function submitOnboardingForm(
-  data: unknown,
-  options?: { saveProfile?: boolean }
+  data: unknown
 ) {
   const supabase = await createClient()
   const {
@@ -34,7 +33,6 @@ export async function submitOnboardingForm(
     const parsed = formSchema.parse(data)
     const normalized = normalizeInput(parsed)
     const normalizedProfile = normalizeProfileSettingsInput(parsed)
-    const shouldSaveProfile = options?.saveProfile ?? true
 
     const tags = await classifyOnboardingTags({
       concreteAnswer: normalized.concreteAnswer,
@@ -64,14 +62,10 @@ export async function submitOnboardingForm(
           id: user.id,
           display_name: normalizedProfile.displayName,
           onboarded: false,
-          ...(shouldSaveProfile
-            ? {
-                age: normalizedProfile.age,
-                avatar_url: normalizedProfile.avatarUrl,
-                current_occupation: normalizedProfile.currentOccupation,
-                location: normalizedProfile.location,
-              }
-            : {}),
+          age: normalizedProfile.age,
+          avatar_url: normalizedProfile.avatarUrl,
+          current_occupation: normalizedProfile.currentOccupation,
+          location: normalizedProfile.location,
         },
         {
           onConflict: "id",
@@ -137,7 +131,6 @@ export async function submitOnboardingForm(
       abstractAnswerLength: normalized.abstractAnswer?.length ?? 0,
       realTagCount: tags.realTagIds.length,
       emotionalTagCount: tags.emotionalTagIds.length,
-      savedProfileSettings: shouldSaveProfile,
     })
 
     return result

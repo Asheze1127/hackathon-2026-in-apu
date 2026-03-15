@@ -7,6 +7,7 @@ export type AppErrorCode =
   | "FORBIDDEN"
   | "CIRCULAR_REFERENCE"
   | "PROFILE_NOT_FOUND"
+  | "ROLE_MODEL_SELECTION_NOT_FOUND"
   | "INTERNAL_ERROR"
 
 export interface ErrorResponse {

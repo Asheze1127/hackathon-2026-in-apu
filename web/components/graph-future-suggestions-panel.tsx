@@ -23,7 +23,7 @@ export function GraphFutureSuggestionsPanel({
   }
 
   return (
-    <Card className="pointer-events-auto absolute top-20 right-4 z-20 flex max-h-[calc(100vh-7rem)] w-full max-w-sm flex-col overflow-hidden border border-border/80 bg-card/95 shadow-xl backdrop-blur">
+    <Card className="pointer-events-auto absolute inset-x-3 bottom-24 z-20 flex max-h-[min(44svh,26rem)] w-auto flex-col overflow-hidden rounded-[1.5rem] border border-border/80 bg-card/95 shadow-xl backdrop-blur sm:top-20 sm:right-4 sm:bottom-auto sm:left-auto sm:max-h-[calc(100vh-7rem)] sm:w-full sm:max-w-sm">
       <CardHeader className="shrink-0 gap-3 border-b border-border/60">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
@@ -127,7 +127,7 @@ export function GraphFutureSuggestionsPanel({
                       <div className="text-[11px] font-semibold tracking-[0.18em] text-rose-700 uppercase">
                         Path Preview
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <div className="mt-2 flex flex-wrap items-center gap-2 overflow-x-auto overscroll-x-contain pb-1">
                         {suggestion.steps.map((step, index) => (
                           <div
                             key={`${suggestion.id}-${step.id}-${index}`}
@@ -144,7 +144,7 @@ export function GraphFutureSuggestionsPanel({
                       </div>
                     </div>
 
-                    <div className="mt-3 flex items-center justify-between gap-3 text-sm">
+                    <div className="mt-3 flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
                         <div className="truncate font-medium">
                           {suggestion.matchedDisplayName}

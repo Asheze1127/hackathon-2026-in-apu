@@ -25,6 +25,8 @@ model Profile {
   createdAt         DateTime @default(now()) @map("created_at")
 
   nodes            Node[]
+  roleModelSelections       RoleModelSelection[] @relation("ProfileRoleModelSelections")
+  selectedAsRoleModelByUsers RoleModelSelection[] @relation("ProfileSelectedAsRoleModel")
   chatRoomsCreated ChatRoom[]       @relation("ChatRoomCreator")
   chatRoomMembers  ChatRoomMember[]
   messages         Message[]
@@ -83,6 +85,23 @@ model Node {
   @@index([userId])
   @@index([parentId])
   @@map("nodes")
+}
+
+model RoleModelSelection {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @map("user_id") @db.Uuid
+  roleModelUserId String   @map("role_model_user_id") @db.Uuid
+  isPrimary       Boolean  @default(false) @map("is_primary")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user      Profile @relation("ProfileRoleModelSelections", fields: [userId], references: [id], onDelete: Cascade)
+  roleModel Profile @relation("ProfileSelectedAsRoleModel", fields: [roleModelUserId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleModelUserId])
+  @@index([userId, isPrimary])
+  @@index([roleModelUserId])
+  @@map("role_model_selections")
 }
 
 model ChatRoom {

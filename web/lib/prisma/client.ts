@@ -1,9 +1,10 @@
 import fs from "node:fs"
 import path from "node:path"
-import { PrismaClient } from "@prisma/client"
+import { Prisma, PrismaClient } from "@prisma/client"
 
 declare global {
   var prisma: PrismaClient | undefined
+  var prismaClientSignature: string | undefined
 }
 
 function applyPrismaEnvFallback() {
@@ -45,10 +46,34 @@ function applyPrismaEnvFallback() {
 
 applyPrismaEnvFallback()
 
-const prisma = globalThis.prisma ?? new PrismaClient()
+function getPrismaClientSignature() {
+  return JSON.stringify(
+    Prisma.dmmf.datamodel.models.map((model) => ({
+      fields: model.fields.map((field) => ({
+        kind: field.kind,
+        name: field.name,
+        type: field.type,
+      })),
+      name: model.name,
+    }))
+  )
+}
+
+const currentSignature = getPrismaClientSignature()
+const shouldReuseClient =
+  globalThis.prisma && globalThis.prismaClientSignature === currentSignature
+
+if (!shouldReuseClient && globalThis.prisma) {
+  void globalThis.prisma.$disconnect().catch(() => undefined)
+}
+
+const prisma: PrismaClient = shouldReuseClient
+  ? globalThis.prisma!
+  : new PrismaClient()
 
 if (process.env.NODE_ENV !== "production") {
   globalThis.prisma = prisma
+  globalThis.prismaClientSignature = currentSignature
 }
 
 export default prisma
