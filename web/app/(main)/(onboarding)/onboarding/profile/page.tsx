@@ -1,11 +1,11 @@
 import { redirect } from "next/navigation"
 
-import { createClient } from "@/lib/supabase/server"
+import { OnboardingForm } from "@/components/onboarding/onboarding-form"
 import { PageLayout } from "@/components/shared/page-layout"
-import { OnboardingQuestionForm } from "@/components/onboarding/onboarding-question-form"
+import { createClient } from "@/lib/supabase/server"
 import { cn } from "@/lib/utils"
 
-const currentStep = 2
+const currentStep = 3
 
 const Page = async () => {
   const supabase = await createClient()
@@ -39,13 +39,13 @@ const Page = async () => {
           </span>
         </div>
         <h1 className="text-2xl font-bold tracking-tight md:text-4xl">
-          今のあなたの意思決定を教えてください
+          名前とプロフィールを設定してください
         </h1>
-        <p className="leading-relaxed text-muted-foreground">
-          まずは必須の2問に答えてください。次のページで名前とプロフィールを設定します。
-        </p>
+        {/* <p className="leading-relaxed text-muted-foreground">
+          名前は必須です。アイコンや住んでいるところなどの追加プロフィールは任意です。
+        </p> */}
       </div>
-      <OnboardingQuestionForm />
+      <OnboardingForm userId={user.id} />
     </PageLayout>
   )
 }

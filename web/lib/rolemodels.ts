@@ -8,7 +8,18 @@ import {
   buildLatestBranch,
   buildTimelineItems,
   listUserTreeNodes,
+  selectCurrentTreeNodeId,
+  type UserTreeNodeData,
 } from "@/lib/user-tree"
+
+interface RoleModelSelectionLookupRow {
+  isPrimary: boolean
+  roleModelUserId: string
+}
+
+interface PrimaryRoleModelSelectionRow {
+  roleModelUserId: string
+}
 
 function getAvatarText(displayName: string | null, fallbackId: string) {
   const trimmedName = displayName?.trim()
@@ -27,6 +38,8 @@ export interface RoleModelSummary {
   avatarText: string
   branch: string
   id: string
+  isPrimary: boolean
+  isSaved: boolean
   name: string
   role: string
   tags: string[]
@@ -41,6 +54,8 @@ export interface RoleModelDetail {
   dmHref: string
   location: string
   name: string
+  isPrimary: boolean
+  isSaved: boolean
   profileEdges: Edge[]
   profileNodes: ReturnType<typeof buildGraphTreeData>["nodes"]
   role: string
@@ -48,30 +63,93 @@ export interface RoleModelDetail {
   years: string
 }
 
+export interface PrimaryRoleModelHomeCard {
+  avatarText: string
+  currentNodeLabel: string
+  id: string
+  location: string
+  name: string
+  ownBranchFrom: string
+  ownBranchTo: string
+  ownCurrentNodeLabel: string
+  profileHref: string
+  role: string
+  roleModelBranchFrom: string
+  roleModelBranchTo: string
+}
+
+async function listSavedRoleModelSelections(userId: string) {
+  return prisma.$queryRaw<Array<RoleModelSelectionLookupRow>>`
+    select
+      role_model_user_id as "roleModelUserId",
+      is_primary as "isPrimary"
+    from role_model_selections
+    where user_id = cast(${userId} as uuid)
+  `
+}
+
+async function getSavedRoleModelSelection(
+  userId: string,
+  targetUserId: string
+) {
+  const rows = await prisma.$queryRaw<Array<RoleModelSelectionLookupRow>>`
+    select
+      role_model_user_id as "roleModelUserId",
+      is_primary as "isPrimary"
+    from role_model_selections
+    where user_id = cast(${userId} as uuid)
+      and role_model_user_id = cast(${targetUserId} as uuid)
+    limit 1
+  `
+
+  return rows[0] ?? null
+}
+
+async function getPrimaryRoleModelSelection(userId: string) {
+  const rows = await prisma.$queryRaw<Array<PrimaryRoleModelSelectionRow>>`
+    select
+      role_model_user_id as "roleModelUserId"
+    from role_model_selections
+    where user_id = cast(${userId} as uuid)
+      and is_primary = true
+    order by updated_at desc
+    limit 1
+  `
+
+  return rows[0] ?? null
+}
+
 export async function listRoleModels(currentUserId: string) {
-  const profiles = await prisma.profile.findMany({
-    where: {
-      id: { not: currentUserId },
-      onboarded: true,
-    },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      displayName: true,
-      currentOccupation: true,
-      location: true,
-      goal: true,
-      nodes: {
-        orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          parentId: true,
-          concreteAnswer: true,
-          createdAt: true,
+  const [profiles, savedSelections] = await Promise.all([
+    prisma.profile.findMany({
+      where: {
+        id: { not: currentUserId },
+        onboarded: true,
+      },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        displayName: true,
+        currentOccupation: true,
+        location: true,
+        goal: true,
+        nodes: {
+          orderBy: { createdAt: "asc" },
+          select: {
+            id: true,
+            parentId: true,
+            concreteAnswer: true,
+            createdAt: true,
+          },
         },
       },
-    },
-  })
+    }),
+    listSavedRoleModelSelections(currentUserId),
+  ])
+
+  const selectionByUserId = new Map(
+    savedSelections.map((selection) => [selection.roleModelUserId, selection])
+  )
 
   return profiles.map<RoleModelSummary>((profile) => {
     const latestNode = profile.nodes[profile.nodes.length - 1] ?? null
@@ -80,6 +158,7 @@ export async function listRoleModels(currentUserId: string) {
         ? (profile.nodes.find((node) => node.id === latestNode.parentId) ??
           null)
         : null
+    const savedSelection = selectionByUserId.get(profile.id)
 
     return {
       avatarText: getAvatarText(profile.displayName, profile.id),
@@ -87,6 +166,8 @@ export async function listRoleModels(currentUserId: string) {
         ? `${parentNode?.concreteAnswer ?? "最初の分岐"} → ${latestNode.concreteAnswer}`
         : "まだ分岐は登録されていません",
       id: profile.id,
+      isPrimary: savedSelection?.isPrimary ?? false,
+      isSaved: Boolean(savedSelection),
       name: profile.displayName?.trim() || "名前未設定",
       role: profile.currentOccupation?.trim() || "活動内容を設定中",
       tags: normalizeTags([
@@ -99,19 +180,23 @@ export async function listRoleModels(currentUserId: string) {
 }
 
 export async function getRoleModelDetail(
-  targetUserId: string
+  targetUserId: string,
+  currentUserId: string
 ): Promise<RoleModelDetail | null> {
-  const profile = await prisma.profile.findUnique({
-    where: { id: targetUserId },
-    select: {
-      id: true,
-      displayName: true,
-      currentOccupation: true,
-      age: true,
-      location: true,
-      onboarded: true,
-    },
-  })
+  const [profile, savedSelection] = await Promise.all([
+    prisma.profile.findUnique({
+      where: { id: targetUserId },
+      select: {
+        id: true,
+        displayName: true,
+        currentOccupation: true,
+        age: true,
+        location: true,
+        onboarded: true,
+      },
+    }),
+    getSavedRoleModelSelection(currentUserId, targetUserId),
+  ])
 
   if (!profile || !profile.onboarded) {
     return null
@@ -128,6 +213,8 @@ export async function getRoleModelDetail(
     branchFrom: latestBranch.from,
     branchTo: latestBranch.to,
     dmHref: `/chat/user/${profile.id}`,
+    isPrimary: savedSelection?.isPrimary ?? false,
+    isSaved: Boolean(savedSelection),
     location: profile.location?.trim() || "住んでいるところ未設定",
     name: profile.displayName?.trim() || "名前未設定",
     profileEdges: graphData.edges,
@@ -138,5 +225,64 @@ export async function getRoleModelDetail(
       treeNodes.length === 0
         ? "ノード未登録"
         : `意思決定ノード ${treeNodes.length}件`,
+  }
+}
+
+export async function getPrimaryRoleModelHomeCard(
+  currentUserId: string,
+  ownTreeNodes?: UserTreeNodeData[]
+): Promise<PrimaryRoleModelHomeCard | null> {
+  const selection = await getPrimaryRoleModelSelection(currentUserId)
+
+  if (!selection) {
+    return null
+  }
+
+  const [profile, resolvedOwnTreeNodes, roleModelTreeNodes] = await Promise.all([
+    prisma.profile.findUnique({
+      where: {
+        id: selection.roleModelUserId,
+      },
+      select: {
+        currentOccupation: true,
+        displayName: true,
+        id: true,
+        location: true,
+        onboarded: true,
+      },
+    }),
+    ownTreeNodes
+      ? Promise.resolve(ownTreeNodes)
+      : listUserTreeNodes(currentUserId),
+    listUserTreeNodes(selection.roleModelUserId),
+  ])
+
+  if (!profile?.onboarded) {
+    return null
+  }
+
+  const ownCurrentNodeId = selectCurrentTreeNodeId(resolvedOwnTreeNodes)
+  const ownCurrentNode =
+    resolvedOwnTreeNodes.find((node) => node.id === ownCurrentNodeId) ?? null
+  const ownLatestBranch = buildLatestBranch(resolvedOwnTreeNodes)
+
+  const roleModelCurrentNodeId = selectCurrentTreeNodeId(roleModelTreeNodes)
+  const roleModelCurrentNode =
+    roleModelTreeNodes.find((node) => node.id === roleModelCurrentNodeId) ?? null
+  const roleModelLatestBranch = buildLatestBranch(roleModelTreeNodes)
+
+  return {
+    avatarText: getAvatarText(profile.displayName, profile.id),
+    currentNodeLabel: roleModelCurrentNode?.concreteAnswer ?? "まだノードがありません",
+    id: profile.id,
+    location: profile.location?.trim() || "住んでいるところ未設定",
+    name: profile.displayName?.trim() || "名前未設定",
+    ownBranchFrom: ownLatestBranch.from,
+    ownBranchTo: ownLatestBranch.to,
+    ownCurrentNodeLabel: ownCurrentNode?.concreteAnswer ?? "まだノードがありません",
+    profileHref: `/profile/${profile.id}`,
+    role: profile.currentOccupation?.trim() || "活動内容を設定中",
+    roleModelBranchFrom: roleModelLatestBranch.from,
+    roleModelBranchTo: roleModelLatestBranch.to,
   }
 }

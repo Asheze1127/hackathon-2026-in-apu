@@ -72,8 +72,19 @@ export function RoleModelDirectory({
                   <span className="font-bold">{roleModel.avatarText}</span>
                 </div>
                 <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <div className="text-lg font-semibold md:text-xl">
-                    {roleModel.name}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="text-lg font-semibold md:text-xl">
+                      {roleModel.name}
+                    </div>
+                    {roleModel.isPrimary ? (
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                        選択中
+                      </span>
+                    ) : roleModel.isSaved ? (
+                      <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                        保存済み
+                      </span>
+                    ) : null}
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {roleModel.role}

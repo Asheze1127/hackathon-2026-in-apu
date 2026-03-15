@@ -24,6 +24,7 @@
 | `abstract_questions` | 抽象質問マスタ（意思決定の背景・軸を問う質問）  | P0    |
 | `concrete_questions` | 具体質問マスタ（実際の選択を問う質問）          | P0    |
 | `nodes`              | ユーザーの意思決定ログ（木の1ノード）           | P0    |
+| `role_model_selections` | ユーザーが保存したロールモデルの対応表       | P1    |
 
 ---
 
@@ -78,7 +79,18 @@ erDiagram
         timestamp created_at
     }
 
+    role_model_selections {
+        uuid id PK
+        uuid user_id FK
+        uuid role_model_user_id FK
+        boolean is_primary
+        timestamp created_at
+        timestamp updated_at
+    }
+
     profiles ||--o{ nodes : "has"
+    profiles ||--o{ role_model_selections : "selects"
+    profiles ||--o{ role_model_selections : "selected as role model"
     concrete_questions ||--o{ nodes : "referenced by"
     abstract_questions ||--o{ nodes : "referenced by"
     nodes ||--o{ nodes : "parent_id"
@@ -172,6 +184,30 @@ INDEX: `type`, `name`
 | `created_at`           | TIMESTAMP | NOT NULL                              |                                                                                             |
 
 INDEX: `user_id`, `parent_id`, `real_tags`（GIN）, `emotional_tags`（GIN）
+
+---
+
+### `role_model_selections`
+
+ユーザーが「今はこの人を参考にしたい」と保存したロールモデルの対応表。
+AI の比較アドバイスはこの保存情報を起点に、都度 `profiles` と `nodes` を参照して生成する。
+
+| カラム               | 型        | 制約                                                    | 説明                                                        |
+| -------------------- | --------- | ------------------------------------------------------- | ----------------------------------------------------------- |
+| `id`                 | UUID      | PK                                                      |                                                             |
+| `user_id`            | UUID      | FK → `auth.users.id` NOT NULL                           | ロールモデルを保存したユーザー                              |
+| `role_model_user_id` | UUID      | FK → `auth.users.id` NOT NULL                           | 保存対象のロールモデルユーザー                              |
+| `is_primary`         | BOOLEAN   | NOT NULL DEFAULT false                                  | 現在比較に使うメインのロールモデルか                        |
+| `created_at`         | TIMESTAMP | NOT NULL                                                | 保存日時                                                    |
+| `updated_at`         | TIMESTAMP | NOT NULL                                                | 主ロールモデル切り替えなどで更新される日時                  |
+
+制約:
+
+- `UNIQUE (user_id, role_model_user_id)` で同一ユーザーの重複保存を禁止
+- `CHECK (user_id <> role_model_user_id)` で自分自身の保存を禁止
+- `WHERE is_primary = true` の部分ユニークインデックスで、各ユーザーの主ロールモデルは最大1件
+
+INDEX: `user_id, is_primary`, `role_model_user_id`
 
 ---
 
