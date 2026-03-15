@@ -10,12 +10,10 @@ function ThemeProvider({
   return (
     <NextThemesProvider
       attribute="class"
-      defaultTheme="system"
-      enableSystem
+      defaultTheme="light"
       disableTransitionOnChange
       {...props}
     >
-      <ThemeHotkey />
       {children}
     </NextThemesProvider>
   )
