@@ -2,162 +2,218 @@
 
 ---
 
-## 0. 設計前提
+## 0. 前提
 
 | 項目 | 内容 |
 | --- | --- |
-| 対象機能 | アカウント作成 / 最初のアンケート / ホーム画面 / 自分の木を眺める / 自分の木に追加する / 自分が選択していない道を見る |
-| 認証方式 | JWT Bearer トークン |
-| AI 処理方針 | LLM API 呼び出しはストリーミングで返却 |
+| 認証 | Supabase Auth |
+| UI 基盤 | Next.js App Router |
+| 書き込み | Server Actions 中心 |
+| リアルタイム | Supabase Realtime |
+| AI 用途 | タグ付け、ロールモデル比較助言、擬似人格応答 |
 
 ---
 
-## 1. 全体フロー概要
+## 1. 全体フロー
 
 ```mermaid
 flowchart LR
-    A[アカウント作成] --> B[最初のアンケート\n今までの具体的な判断を取得する]
-    B --> C[ホーム画面]
-    C --> D[自分の木を眺める]
-    D --> E[自分の木に追加する]
-    D --> F[自分が選択していない道を見る]
+    A[ログイン / 新規登録]
+    B[オンボーディング開始]
+    C[質問 2 問]
+    D[プロフィール入力]
+    E[ホーム]
+    F[ノード追加 / 差し込み]
+    G[未来候補を見る]
+    H[ロールモデル比較]
+    I[AI相談 / DM]
+
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    E --> G
+    E --> H
+    H --> I
 ```
 
 ---
 
-## 2. アカウント作成フロー
+## 2. オンボーディング
 
 ```mermaid
 sequenceDiagram
     participant User as ユーザー
-    participant FE as フロントエンド
-    participant API as バックエンド API
-    participant DB as データベース
+    participant FE as フロント
+    participant Action as submitOnboardingForm
+    participant DB as Supabase
+    participant AI as Campus/OpenAI互換
 
-    User->>FE: メールアドレス・パスワードを入力
-    FE->>API: POST /auth/register
-    API->>DB: ユーザー情報を保存
-    DB-->>API: 保存完了
-    API-->>FE: JWT トークン発行
-    FE-->>User: 最初のアンケート画面へ遷移
+    User->>FE: 2つの質問に回答
+    FE->>FE: sessionStorage に draft 保存
+    User->>FE: 名前とプロフィールを入力
+    FE->>Action: submitOnboardingForm
+    Action->>AI: present / reason を渡してタグ付け
+    Action->>DB: profiles を upsert
+    Action->>DB: ルートノードを insert
+    Action->>DB: profiles.onboarded = true
+    Action-->>FE: 完了
+    FE-->>User: /onboarding/done -> / へ遷移
 ```
 
 ---
 
-## 3. 最初のアンケートフロー
+## 3. ホームの木
 
-> 今までの具体的な判断（ターニングポイント・選択）を取得する。
+### 3-1. 初期表示
 
 ```mermaid
 sequenceDiagram
     participant User as ユーザー
-    participant FE as フロントエンド
-    participant API as バックエンド API
-    participant DB as データベース
+    participant Page as /
+    participant Helper as listUserTreeNodes
+    participant DB as Prisma/Supabase
 
-    User->>FE: アンケート（これまでの意思決定）を入力
-    Note right of User: 例）高校 → 大学進学 YES\n大学 → インターン YES → 就職
-    FE->>API: POST /users/me/life-logs（複数件）
-    API->>DB: 意思決定ログをまとめて保存
-    DB-->>API: 保存完了
-    API-->>FE: 成功レスポンス
-    FE-->>User: ホーム画面へ遷移
+    User->>Page: ホームを開く
+    Page->>Helper: 自分の木を取得
+    Helper->>DB: nodes を親から順に取得
+    DB-->>Helper: ノード一覧
+    Helper-->>Page: Graph 用データ
+    Page-->>User: 木を表示
 ```
 
----
-
-## 4. ホーム画面
-
-ホーム画面ではユーザーが以下の操作に進める起点となる。
-
-| 操作 | 遷移先 |
-| --- | --- |
-| 自分の木を見る | 自分の木を眺める画面 |
-| ロールモデルを探す | ロールモデル検索（将来拡張） |
-
----
-
-## 5. 自分の木を眺めるフロー
-
-> ユーザー自身の意思決定ログを木構造（ツリー）で可視化して表示する。
+### 3-2. ノード追加
 
 ```mermaid
 sequenceDiagram
     participant User as ユーザー
-    participant FE as フロントエンド
-    participant API as バックエンド API
-    participant DB as データベース
+    participant Graph as ホーム UI
+    participant Action as addNode
+    participant AI as Campus/OpenAI互換
+    participant DB as Prisma/Supabase
 
-    User->>FE: 「自分の木を見る」を選択
-    FE->>API: GET /users/me/life-logs
-    API->>DB: 自分の意思決定ログを取得
-    DB-->>API: ログ一覧返却
-    API-->>FE: ツリー構造データ返却
-    FE-->>User: 意思決定の木をグラフで表示
+    User->>Graph: 未来 or 過去追加を開く
+    Graph->>Action: addNode
+    Action->>AI: concreteAnswer / abstractAnswer を渡してタグ付け
+    Action->>DB: nodes を insert / 差し込み更新
+    Action-->>Graph: 保存済みノード
+    Graph-->>User: router.refresh で木を再描画
 ```
 
-この画面から以下の2つの操作に進める。
-
-```mermaid
-flowchart LR
-    D[自分の木を眺める] --> E[自分の木に追加する]
-    D --> F[自分が選択していない道を見る]
-```
-
----
-
-## 6. 自分の木に追加するフロー
-
-> 新たな意思決定ログを追加し、木を育てる。
+### 3-3. 未来候補
 
 ```mermaid
 sequenceDiagram
     participant User as ユーザー
-    participant FE as フロントエンド
-    participant API as バックエンド API
-    participant DB as データベース
+    participant Graph as ホーム UI
+    participant Action as getFutureSuggestions
+    participant DB as Prisma
 
-    User->>FE: 新しいターニングポイントと選択を入力
-    Note right of User: 例）就職 → スタートアップを選んだ
-    FE->>API: POST /users/me/life-logs
-    API->>DB: 意思決定ログを保存
-    DB-->>API: 保存完了
-    API-->>FE: 成功レスポンス
-    FE-->>User: 自分の木を更新して表示
+    User->>Graph: ノード本体をクリック
+    Graph->>Action: getFutureSuggestions(nodeId)
+    Action->>DB: 自分のノードタグを取得
+    Action->>DB: 他ユーザーの一致ノードとその子孫を検索
+    Action-->>Graph: 最大5本、最大3手先の候補
+    Graph-->>User: ピンクの予測ノードをオーバーレイ表示
 ```
 
 ---
 
-## 7. 自分が選択していない道を見るフロー
-
-> 自分が選ばなかった選択肢を選んだ場合のキャリアパターンをロールモデルデータから提示する。
+## 4. ロールモデル比較
 
 ```mermaid
 sequenceDiagram
     participant User as ユーザー
-    participant FE as フロントエンド
-    participant API as バックエンド API
-    participant DB as データベース
+    participant FE as ホーム or /profile/[uid]
+    participant Action as generateRoleModelAdvice
+    participant DB as Prisma/Supabase
+    participant AI as Campus/OpenAI互換
 
-    User->>FE: 自分の木のノードで「別の道を見る」を選択
-    Note right of User: 例）大学進学 NO を選んだ場合は？
-    FE->>API: GET /career-paths?turning_point=xxx&choice=yyy
-    API->>DB: 同じ選択をしたロールモデルのキャリアパターンを検索
-    DB-->>API: 複数の分岐パターン返却
-    API-->>FE: 分岐パターンデータ返却
-    FE-->>User: 「選ばなかった道」のキャリア事例を表示
+    User->>FE: AIアドバイスを押す
+    FE->>Action: targetUserId を送る
+    Action->>DB: role_model_selections を確認
+    Action->>DB: 自分とロールモデルの木を取得
+    Action->>AI: 木と重なりタグを渡して助言生成
+    Action-->>FE: currentPosition / nextStep / preparation / pitfalls
+    FE-->>User: 比較カードを表示
 ```
 
 ---
 
-## 8. エラー処理方針
+## 5. チャット
+
+### 5-1. 人間 DM
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザー
+    participant FE as /chat/user/[uid]
+    participant Helper as getOrCreateUserDmRoomForCurrentUser
+    participant DB as Prisma/Supabase
+
+    User->>FE: DMを送る
+    FE->>Helper: room を再利用または作成
+    Helper->>DB: 既存 room 検索
+    alt 既存 room がある
+        DB-->>Helper: roomId
+    else
+        Helper->>DB: chat_rooms / chat_room_members 作成
+        DB-->>Helper: roomId
+    end
+    FE-->>User: /chat/[roomId] に遷移
+```
+
+### 5-2. room 会話
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザー
+    participant Client as chat-room-view
+    participant DB as Supabase
+    participant RT as Supabase Realtime
+
+    User->>Client: メッセージ送信
+    Client->>DB: messages に insert
+    DB-->>Client: 保存済みメッセージ
+    RT-->>Client: postgres_changes INSERT
+    RT-->>Client: typing broadcast
+    Client-->>User: 新着と入力中表示を更新
+```
+
+### 5-3. AI相談
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザー
+    participant Client as rolemodel-ai-chat-view
+    participant Action as generateRoleModelReply
+    participant AI as Campus/OpenAI互換
+
+    User->>Client: 質問を入力
+    Client->>Action: message + history を送信
+    Action->>AI: persona prompt と履歴を渡す
+    AI-->>Action: 応答
+    Action-->>Client: 返答テキスト
+    Client-->>User: その場で会話を継続
+```
+
+---
+
+## 6. エラー処理
 
 | ケース | 対応 |
 | --- | --- |
-| 認証エラー | 401 を返却 → フロントは `/login` へリダイレクト |
-| 権限エラー | 403 を返却 → エラー画面を表示 |
-| データなし | 404 を返却 → 「まだログがありません」を表示 |
-| LLM API エラー | リトライ最大 3 回。失敗時はユーザーに「しばらくしてから再試行してください」を表示 |
-| DB エラー | 500 を返却 → ログ出力 |
+| 未認証 | `UNAUTHORIZED` を返し、画面側で `/auth/login` へ誘導 |
+| 入力不正 | `VALIDATION_ERROR` を表示 |
+| 他人のノード操作 | `FORBIDDEN` |
+| ノード / プロフィール未存在 | `NODE_NOT_FOUND` / `PROFILE_NOT_FOUND` |
+| AI 応答失敗 | 画面上に再試行可能なメッセージを表示 |
 
 ---
+
+## 7. 実装メモ
+
+- ホームのロールモデル比較カードはモバイルで compact 表示
+- 未来候補の補助パネルは desktop のみ。モバイルでは予測ノードだけ表示
+- チャットは WebRTC ではなく Supabase Realtime

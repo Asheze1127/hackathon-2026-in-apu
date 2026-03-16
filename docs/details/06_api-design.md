@@ -1,707 +1,236 @@
-# API 設計書：Decision Path
+# API / Server Action 設計書：Decision Path
 
 ---
 
-## 0. 設計前提
+## 0. 前提
 
-| 項目                     | 内容                                                                   |
-| ------------------------ | ---------------------------------------------------------------------- |
-| ベース URL               | `/api` (Next.js Route Handlers)                                        |
-| 認証方式                 | Supabase Auth が発行する JWT を `Authorization: Bearer <token>` で送信 |
-| レスポンス形式           | `Content-Type: application/json`                                       |
-| 木構造の実装方針         | 隣接リスト（`parent_id`）+ 再帰クエリで取得                            |
-| AI 呼び出し              | OpenRouter 経由。すべてバックエンドのビジネスロジック内で完結する      |
-| エラーレスポンス共通形式 | `{ "error": { "code": "ERROR_CODE", "message": "説明" } }`             |
+現行実装は、広い REST API 群ではなく **Next.js App Router の Server Actions と server helper** を中心に構成している。
 
-### AIが関わる処理（2箇所のみ）
+整理するとインターフェースは 3 種類ある。
 
-| #   | タイミング                        | 内容                                                                                   |
-| --- | --------------------------------- | -------------------------------------------------------------------------------------- |
-| 1   | ノード保存時（`POST /api/nodes`）             | ユーザーの木全体を文脈としてAIに渡し、今回の「出来事」に関する深掘り質問を生成して返す |
-| 2   | ノード保存時（`POST /api/nodes`）             | 入力内容をもとにAIが `realTags` / `emotionalTags` を自動付与する                       |
-| 3   | ロールモデル比較時（`POST /api/role-models/advice`） | 自分の木と選択したロールモデルの木を比較し、次の一手の助言を生成する                  |
+| 種別 | 用途 | 例 |
+| --- | --- | --- |
+| Server Action | フォーム送信・ミューテーション | ノード追加、オンボーディング保存、ロールモデル保存 |
+| Server Helper | Server Component からの読み取り | ホームの木取得、ロールモデル一覧、チャット一覧 |
+| Supabase Client + Realtime | チャット本文送信・購読 | `messages` への insert、`postgres_changes` 購読 |
 
-> どちらもノード追加のビジネスロジック内で完結する。AI専用エンドポイントは不要。
-
-### DBマスタとAPIの関係
-
-| マスタテーブル       | フロントからの取得API | 理由                                                                                                                                      |
-| -------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `concrete_questions` | **不要**              | オンボーディングは「今何をしていますか？」の固定1問。ノード追加時も自由入力（出来事を記述させる）。バックエンドでシードのIDを直接参照する |
-| `abstract_questions` | **不要**              | ノード追加時の「なぜそれをしていますか？」も固定1問。同上                                                                                 |
-| `tags`               | **不要**              | タグはAIが自動付与するためフロントで選ばせない                                                                                            |
-
----
-
-## 1. エンドポイント一覧
-
-| #   | メソッド | パス                 | 概要                                                        | 認証 | 優先度 |
-| --- | -------- | -------------------- | ----------------------------------------------------------- | ---- | ------ |
-| 1   | GET      | `/api/nodes`         | 自分の木（全ノード）を取得                                  | 必須 | P0     |
-| 2   | POST     | `/api/nodes`         | ノードを追加する（AI深掘り質問生成・タグ付けを内包）        | 必須 | P0     |
-| 3   | PATCH    | `/api/nodes/:nodeId` | ノードの親変更（差し込み・移動）または内容編集              | 必須 | P0     |
-| 4   | DELETE   | `/api/nodes/:nodeId` | ノードを削除する                                            | 必須 | P0     |
-| 5   | POST     | `/api/onboarding`    | 初回オンボーディングを完了する（1ノード保存 + profile更新） | 必須 | P0     |
-| 6   | GET      | `/api/profile`       | 自分のプロフィールを取得                                    | 必須 | P0     |
-| 7   | PATCH    | `/api/profile`       | プロフィール（goal等）を更新                                | 必須 | P0     |
-| 8   | GET      | `/api/role-models/selections` | 自分が保存したロールモデル一覧を取得                     | 必須 | P1     |
-| 9   | PUT      | `/api/role-models/selections/:targetUserId` | ロールモデルを保存し、必要なら主ロールモデルに設定 | 必須 | P1     |
-| 10  | DELETE   | `/api/role-models/selections/:targetUserId` | 保存済みロールモデルを解除                           | 必須 | P1     |
-| 11  | POST     | `/api/role-models/advice` | 現在の木とロールモデルの木を比較したAI助言を取得         | 必須 | P1     |
-
----
-
-## 2. エンドポイント詳細
-
----
-
-### 2-1. `GET /api/nodes` — 自分の木を取得
-
-自分のすべてのノードを取得し、フロントがツリー描画できる形で返す。  
-DB では隣接リスト方式で保持しているが、**再帰クエリで全子孫を取得**し、フラットな配列として返す。フロントがツリー構造に組み立てる。
-
-返却順序は **`depth` 昇順 → `createdAt` 昇順**（親→子の順が保証される）。同じ深さの兄弟ノードは作成日時の古い順に並ぶ。
-
-```sql
-WITH RECURSIVE node_tree AS (
-  SELECT id, parent_id, concrete_answer, created_at, 0 AS depth
-  FROM nodes
-  WHERE user_id = $userId AND parent_id IS NULL
-
-  UNION ALL
-
-  SELECT n.id, n.parent_id, n.concrete_answer, n.created_at, nt.depth + 1
-  FROM nodes n
-  INNER JOIN node_tree nt ON nt.id = n.parent_id
-)
-SELECT * FROM node_tree
-ORDER BY depth ASC, created_at ASC;
-```
-
-#### Request
-
-```http
-GET /api/nodes
-Authorization: Bearer <token>
-```
-
-クエリパラメータ（任意）:
-
-| パラメータ | 型            | 説明                                                   |
-| ---------- | ------------- | ------------------------------------------------------ |
-| `rootId`   | string (UUID) | 指定した場合、そのノードを起点とするサブツリーのみ返す |
-
-#### Response `200 OK`
+共通エラー形式は次の形で扱う。
 
 ```json
 {
-  "nodes": [
-    {
-      "id": "uuid",
-      "parentId": null,
-      "concreteAnswer": "エンジニアとして働いている",
-      "abstractAnswer": "ものづくりが好きだから",
-      "realTags": ["uuid", "uuid"],
-      "emotionalTags": ["uuid"],
-      "createdAt": "2026-03-15T00:00:00.000Z"
-    }
-  ]
-}
-```
-
-> `concreteQuestionId` / `abstractQuestionId` はフロントの表示には不要なため省略する。  
-> 必要な場合は `include=questions` クエリパラメータで追加可能（P1）。
-
----
-
-### 2-2. `POST /api/nodes` — ノードを追加する
-
-ユーザーが新しい出来事（意思決定ログ）を木に追加する。
-
-#### バックエンド内部の処理フロー
-
-```
-1. リクエストを受け取る
-2. ユーザーの木全体を再帰クエリで取得
-3. AIに「木の全文脈 + 今回の入力」を渡してタグ付けを実行
-   → realTags / emotionalTags を取得
-4. AIに「木の全文脈 + 今回の入力」を渡して深掘り質問を生成
-5. Node を INSERT（concreteQuestionId / abstractQuestionId はバックエンドで固定シードIDを設定）
-6. 生成した深掘り質問と保存したノードをまとめてレスポンス
-```
-
-> `concreteQuestionId` / `abstractQuestionId` はフロントから送らない。  
-> 「今何をしていますか？」「なぜそれをしていますか？」の固定シード値をバックエンドで設定する。
-
-#### ノードの挿入パターン
-
-| パターン       | 説明                                      | `parentId` の値                                                       |
-| -------------- | ----------------------------------------- | --------------------------------------------------------------------- |
-| **末尾追加**   | 既存ノードの子として追加（通常ケース）    | 親ノードのID                                                          |
-| **ルート追加** | 木の新しいルートとして追加                | `null`                                                                |
-| **差し込み**   | 「親→既存子」の間に新しいノードを挿入する | 挿入したい親のID。その後 `PATCH` で既存の子の `parentId` を付け替える |
-
-#### Request
-
-```http
-POST /api/nodes
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-
-```json
-{
-  "parentId": "uuid or null",
-  "concreteAnswer": "エンジニアとして働いている",
-  "abstractAnswer": "ものづくりが好きだから"
-}
-```
-
-| フィールド       | 型             | 必須 | 説明                                               |
-| ---------------- | -------------- | ---- | -------------------------------------------------- |
-| `parentId`       | string \| null | ✅   | 親ノードのID。ルートノードの場合は `null`          |
-| `concreteAnswer` | string         | ✅   | 「今何をしていますか？」への回答（出来事）         |
-| `abstractAnswer` | string         |      | 「なぜそれをしていますか？」への回答（理由・動機） |
-
-#### Response `201 Created`
-
-```json
-{
-  "node": {
-    "id": "uuid",
-    "parentId": "uuid or null",
-    "concreteAnswer": "エンジニアとして働いている",
-    "abstractAnswer": "ものづくりが好きだから",
-    "realTags": ["uuid", "uuid"],
-    "emotionalTags": ["uuid"],
-    "createdAt": "2026-03-15T00:00:00.000Z"
-  },
-  "aiQuestion": "ものづくりへの興味はいつ頃から気づきましたか？きっかけになった経験があれば教えてください。"
-}
-```
-
-| フィールド   | 説明                                                                         |
-| ------------ | ---------------------------------------------------------------------------- |
-| `node`       | 保存されたノード（AIが付与したタグ含む）                                     |
-| `aiQuestion` | AIが生成した深掘り質問。フロントはこれをユーザーに表示してリアクションを促す |
-
----
-
-### 2-3. `PATCH /api/nodes/:nodeId` — ノードを更新する
-
-ノードの親変更（差し込み・移動）や回答内容の修正に使う。
-
-#### ユースケース
-
-- **差し込み後の既存子ノードの親を付け替える**（`parentId` だけ変更）
-- **ノードの回答を編集する**
-
-#### Request
-
-```http
-PATCH /api/nodes/:nodeId
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-
-変更したいフィールドのみ送る（すべて省略可）:
-
-```json
-{
-  "parentId": "uuid",
-  "concreteAnswer": "修正後の回答",
-  "abstractAnswer": "修正後の理由"
-}
-```
-
-| フィールド       | 型             | 説明                                     |
-| ---------------- | -------------- | ---------------------------------------- |
-| `parentId`       | string \| null | 親ノードのIDを変更する（差し込み・移動） |
-| `concreteAnswer` | string         | 具体回答を修正する                       |
-| `abstractAnswer` | string \| null | 抽象回答を修正する                       |
-
-#### Response `200 OK`
-
-```json
-{
-  "node": {
-    "id": "uuid",
-    "parentId": "uuid",
-    "concreteAnswer": "修正後の回答",
-    "abstractAnswer": "修正後の理由",
-    "realTags": ["uuid"],
-    "emotionalTags": ["uuid"],
-    "createdAt": "2026-03-15T00:00:00.000Z"
-  }
-}
-```
-
-#### エラーケース
-
-| ステータス | コード               | 説明                                                        |
-| ---------- | -------------------- | ----------------------------------------------------------- |
-| 403        | `FORBIDDEN`          | 他人のノードを操作しようとした                              |
-| 404        | `NODE_NOT_FOUND`     | 指定した `nodeId` が存在しない                              |
-| 422        | `CIRCULAR_REFERENCE` | `parentId` に自分自身または自分の子孫を指定した（循環参照） |
-
----
-
-### 2-4. `DELETE /api/nodes/:nodeId` — ノードを削除する
-
-指定したノードを削除する。  
-**子ノードは削除しない**（子ノードの `parentId` を削除ノードの親に自動で付け替える）。
-
-#### バックエンド内部の処理フロー
-
-```
-1. 削除対象ノードの parentId（= 「祖父」）を取得する
-2. 削除対象の直接の子ノードの parentId を「祖父」に一括 UPDATE
-3. 削除対象ノードを DELETE
-```
-
-#### Request
-
-```http
-DELETE /api/nodes/:nodeId
-Authorization: Bearer <token>
-```
-
-#### Response `200 OK`
-
-```json
-{
-  "deletedNodeId": "uuid",
-  "updatedChildIds": ["uuid", "uuid"]
-}
-```
-
-| フィールド        | 説明                                                  |
-| ----------------- | ----------------------------------------------------- |
-| `deletedNodeId`   | 削除したノードのID                                    |
-| `updatedChildIds` | 親を付け替えた子ノードのIDリスト（0件の場合は空配列） |
-
----
-
-### 2-5. `POST /api/onboarding` — 初回オンボーディングを完了する
-
-初回ログイン時（S-02）専用。  
-「今何をしていますか？」「なぜそれをしていますか？」への回答を1ノードとして保存し、`profile.onboarded` を `true` にする。  
-通常のノード追加（`POST /api/nodes`）と異なり、AI深掘り質問の生成は行わない（初回はそのままホームへ遷移する）。
-
-#### Request
-
-```http
-POST /api/onboarding
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-
-```json
-{
-  "goal": "グローバルに活躍できるエンジニアになりたい",
-  "concreteAnswer": "大学でコンピュータサイエンスを専攻している",
-  "abstractAnswer": "ソフトウェアで社会課題を解決したいから"
-}
-```
-
-| フィールド       | 型     | 必須 | 説明                                        |
-| ---------------- | ------ | ---- | ------------------------------------------- |
-| `goal`           | string | ✅   | ユーザーの最終目標（`profile.goal` に保存） |
-| `concreteAnswer` | string | ✅   | 「今何をしていますか？」への回答            |
-| `abstractAnswer` | string |      | 「なぜそれをしていますか？」への回答        |
-
-#### バックエンド内部の処理フロー
-
-```
-1. profile.goal を UPDATE
-2. Node を INSERT（parentId = null のルートノード、concreteQuestionId / abstractQuestionId はシードIDを設定）
-3. AIにタグ付けを依頼して realTags / emotionalTags を Node に保存
-4. profile.onboarded を true に UPDATE
-5. レスポンス返却
-```
-
-`realTags` / `emotionalTags` に保存する値はタグ名ではなく `tags.id` の UUID。
-ノード同士の類似検索は UUID 配列の重なりで行い、タグ名の部分一致検索が必要な場合は `tags` テーブルを先に検索して `id` を解決してから `nodes` を絞り込む。
-
-#### Response `201 Created`
-
-```json
-{
-  "profile": {
-    "id": "uuid",
-    "goal": "グローバルに活躍できるエンジニアになりたい",
-    "onboarded": true
-  },
-  "node": {
-    "id": "uuid",
-    "parentId": null,
-    "concreteAnswer": "大学でコンピュータサイエンスを専攻している",
-    "abstractAnswer": "ソフトウェアで社会課題を解決したいから",
-    "realTags": ["uuid"],
-    "emotionalTags": ["uuid"],
-    "createdAt": "2026-03-15T00:00:00.000Z"
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "説明"
   }
 }
 ```
 
 ---
 
-### 2-6. `GET /api/profile` — 自分のプロフィールを取得
+## 1. インターフェース一覧
 
-#### Request
+### 1-1. ノード系
 
-```http
-GET /api/profile
-Authorization: Bearer <token>
-```
+| 種別 | 名前 | ファイル | 役割 |
+| --- | --- | --- | --- |
+| Action | `addNode` | `web/actions/nodes/actions.ts` | 未来 / 過去 / 差し込み追加。保存時に AI タグ付けも行う |
+| Action | `updateNode` | `web/actions/nodes/actions.ts` | ノード内容または親子関係の更新 |
+| Action | `deleteNode` | `web/actions/nodes/actions.ts` | ノード削除 |
+| Action | `getUserTree` | `web/actions/nodes/actions.ts` | 自分の木またはサブツリー取得 |
+| Action | `getFutureSuggestions` | `web/actions/nodes/actions.ts` | タグ部分一致から未来候補を返す |
+| Helper | `listUserTreeNodes` | `web/lib/user-tree.ts` | 木データを深さ付きで取得 |
+| Helper | `buildGraphTreeData` | `web/lib/user-tree.ts` | React Flow 向けノード / エッジ整形 |
 
-#### Response `200 OK`
+### 1-2. オンボーディング / プロフィール
 
-```json
-{
-  "profile": {
-    "id": "uuid",
-    "displayName": "田中 太郎",
-    "avatarUrl": "https://cdn.example.com/profiles/user-1.png",
-    "currentOccupation": "ソフトウェアエンジニア",
-    "age": 28,
-    "location": "東京都渋谷区",
-    "goal": "グローバルに活躍できるエンジニアになりたい",
-    "onboarded": true,
-    "createdAt": "2026-03-15T00:00:00.000Z"
-  }
-}
-```
+| 種別 | 名前 | ファイル | 役割 |
+| --- | --- | --- | --- |
+| Action | `submitOnboardingForm` | `web/app/(main)/(onboarding)/onboarding/actions.ts` | 質問 2 問 + プロフィールをまとめて保存し、初期ノードを作る |
+| Action | `updateProfileSettings` | `web/app/(main)/(app)/profile/actions.ts` | 自分のプロフィール更新 |
 
----
+### 1-3. ロールモデル
 
-### 2-7. `PATCH /api/profile` — プロフィールを更新
+| 種別 | 名前 | ファイル | 役割 |
+| --- | --- | --- | --- |
+| Helper | `listRoleModels` | `web/lib/rolemodels.ts` | ロールモデル一覧を返す |
+| Helper | `getRoleModelDetail` | `web/lib/rolemodels.ts` | 詳細ページ用のプロフィール / タイムライン / ツリーを返す |
+| Helper | `getPrimaryRoleModelHomeCard` | `web/lib/rolemodels.ts` | ホーム左上の比較カード用データを返す |
+| Action | `saveRoleModelSelection` | `web/actions/rolemodels/actions.ts` | ロールモデル保存と `isPrimary` 切り替え |
+| Action | `deleteRoleModelSelection` | `web/actions/rolemodels/actions.ts` | ロールモデル保存解除 |
+| Action | `generateRoleModelAdvice` | `web/actions/rolemodels/actions.ts` | 自分の木と主ロールモデルの木を比較して AI 助言を返す |
+| Action | `generateRoleModelReply` | `web/actions/rolemodel-chat/actions.ts` | ロールモデル擬似人格の返答生成 |
 
-`goal` と表示用プロフィール項目の変更に使う。
+### 1-4. チャット
 
-#### Request
-
-```http
-PATCH /api/profile
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-
-```json
-{
-  "displayName": "田中 太郎",
-  "avatarUrl": "https://cdn.example.com/profiles/user-1.png",
-  "currentOccupation": "ソフトウェアエンジニア",
-  "age": 28,
-  "location": "東京都渋谷区",
-  "goal": "起業家として独立したい"
-}
-```
-
-変更したいフィールドのみ送る。`avatarUrl` / `currentOccupation` / `age` / `location` は `null` を送るとクリアできる。
-
-| フィールド          | 型             | 説明                       |
-| ------------------- | -------------- | -------------------------- |
-| `displayName`       | string         | 他ユーザーに見える表示名   |
-| `avatarUrl`         | string \| null | アイコン画像 URL           |
-| `currentOccupation` | string \| null | 現在の職業                 |
-| `age`               | number \| null | プロフィールに表示する年齢 |
-| `location`          | string \| null | 現在住んでいる場所         |
-| `goal`              | string \| null | ユーザーの最終目標         |
-
-#### Response `200 OK`
-
-```json
-{
-  "profile": {
-    "id": "uuid",
-    "displayName": "田中 太郎",
-    "avatarUrl": "https://cdn.example.com/profiles/user-1.png",
-    "currentOccupation": "ソフトウェアエンジニア",
-    "age": 28,
-    "location": "東京都渋谷区",
-    "goal": "起業家として独立したい",
-    "onboarded": true
-  }
-}
-```
+| 種別 | 名前 | ファイル | 役割 |
+| --- | --- | --- | --- |
+| Helper | `ensureChatRoomsForCurrentUser` | `web/lib/chat.ts` | チャット一覧表示前に既定 room を補完 |
+| Helper | `listChatRoomsForCurrentUser` | `web/lib/chat.ts` | 自分の所属 room 一覧を返す |
+| Helper | `getOrCreateUserDmRoomForCurrentUser` | `web/lib/chat.ts` | 他ユーザーとの 1対1 room を再利用または作成 |
+| Helper | `getChatRoomForCurrentUser` | `web/lib/chat.ts` | room 詳細の membership 確認 |
+| Helper | `listMessagesForRoom` | `web/lib/chat.ts` | room のメッセージ履歴取得 |
+| Client | `supabase.from("messages").insert(...)` | `web/components/chat/chat-room-view.tsx` | メッセージ送信 |
+| Realtime | `postgres_changes` / `broadcast` | `web/components/chat/chat-room-view.tsx` | 新着同期 / 入力中表示 |
 
 ---
 
-### 2-8. `GET /api/role-models/selections` — 保存済みロールモデル一覧を取得
+## 2. Action 詳細
 
-ユーザーが保存しているロールモデル一覧を返す。`isPrimary = true` の行が、現在比較対象として使う主ロールモデル。
+### 2-1. `submitOnboardingForm`
 
-#### Request
+| 項目 | 内容 |
+| --- | --- |
+| 役割 | オンボーディング完了処理 |
+| 呼び出し元 | `/onboarding/profile` |
+| 入力 | `present`, `reason`, `displayName`, `avatarUrl`, `currentOccupation`, `age`, `location` |
+| 必須 | `present`, `reason`, `displayName` |
+| 保存先 | `profiles`, `nodes` |
 
-```http
-GET /api/role-models/selections
-Authorization: Bearer <token>
-```
+処理:
 
-#### Response `200 OK`
+1. 入力を validation
+2. `present` / `reason` を AI に渡してタグ付け
+3. `profiles` を upsert
+4. ルートノードを 1 件 insert
+5. `profiles.onboarded = true` に更新
 
-```json
-{
-  "roleModels": [
-    {
-      "targetUserId": "uuid",
-      "isPrimary": true,
-      "createdAt": "2026-03-16T00:00:00.000Z",
-      "profile": {
-        "displayName": "山田 直人",
-        "currentOccupation": "SaaSスタートアップ共同創業者",
-        "avatarUrl": "https://cdn.example.com/profiles/user-1.png"
-      }
-    }
-  ]
-}
-```
+### 2-2. `updateProfileSettings`
 
----
+| 項目 | 内容 |
+| --- | --- |
+| 役割 | 自分のプロフィール編集 |
+| 呼び出し元 | `/profile/edit` |
+| 更新項目 | `display_name`, `avatar_url`, `current_occupation`, `age`, `location` |
+| 備考 | 更新後に `/profile` と `/profile/edit` を revalidate |
 
-### 2-9. `PUT /api/role-models/selections/:targetUserId` — ロールモデルを保存する
+### 2-3. `addNode`
 
-指定ユーザーをロールモデルとして保存する。
-既存保存がない場合は INSERT、ある場合は `isPrimary` だけ更新する。
+| 項目 | 内容 |
+| --- | --- |
+| 役割 | 木へのノード追加 |
+| 呼び出し元 | ホームの木 UI |
+| モード | `append`, `insert-between`, `prepend-root` |
+| AI 処理 | 保存前に `realTags` / `emotionalTags` を自動付与 |
 
-#### Request
+現在の UI 上の意味:
 
-```http
-PUT /api/role-models/selections/:targetUserId
-Authorization: Bearer <token>
-Content-Type: application/json
-```
+- ノード上部: 未来追加
+- ノード下部: 過去追加
+- 親子の間: `insert-between`
 
-```json
-{
-  "isPrimary": true
-}
-```
+### 2-4. `getFutureSuggestions`
 
-| フィールド  | 型      | 説明                                           |
-| ----------- | ------- | ---------------------------------------------- |
-| `isPrimary` | boolean | `true` の場合、そのユーザーを主ロールモデルにする |
+| 項目 | 内容 |
+| --- | --- |
+| 役割 | 未来候補の検索 |
+| 呼び出し元 | ホームでノード本体をクリック |
+| 検索対象 | 他ユーザーの onboarded なノード |
+| ロジック | `realTags` / `emotionalTags` の部分一致 |
+| 上限 | 最大 5 本、各候補は最大 3 手先まで |
 
-#### Response `200 OK`
+返却内容:
 
-```json
-{
-  "selection": {
-    "id": "uuid",
-    "targetUserId": "uuid",
-    "isPrimary": true,
-    "createdAt": "2026-03-16T00:00:00.000Z",
-    "updatedAt": "2026-03-16T00:05:00.000Z"
-  }
-}
-```
+- 選択ノードのラベル
+- 選択ノードに付いているタグ名
+- 候補ごとのルートラベル
+- 候補パス (`steps`)
+- 一致元ユーザーの表示名 / 職業 / プロフィール導線
 
-補足:
+### 2-5. `saveRoleModelSelection` / `deleteRoleModelSelection`
 
-- 同一ユーザーを重複保存しないよう `UNIQUE (user_id, role_model_user_id)` を持つ
-- `isPrimary = true` を更新すると、同ユーザーの他レコードは `false` に落とす
-- 自分自身はロールモデルとして保存できない
+| 項目 | 内容 |
+| --- | --- |
+| 保存先 | `role_model_selections` |
+| 制約 | 自分自身は保存不可、主ロールモデルは 1 件まで |
+| 備考 | 現行実装では raw SQL で read / write している |
 
----
+### 2-6. `generateRoleModelAdvice`
 
-### 2-10. `DELETE /api/role-models/selections/:targetUserId` — 保存済みロールモデルを解除する
+| 項目 | 内容 |
+| --- | --- |
+| 役割 | 自分とロールモデルの木の比較助言 |
+| 呼び出し元 | `/profile/[uid]` とホームの比較カード |
+| 出力 | `currentPosition`, `nextStep`, `preparation[]`, `pitfalls[]` |
+| 保存 | DB 保存しない。都度生成 |
 
-#### Request
+AI に渡す主な文脈:
 
-```http
-DELETE /api/role-models/selections/:targetUserId
-Authorization: Bearer <token>
-```
+- 自分の現在ノードとタイムライン
+- ロールモデルの現在ノードとタイムライン
+- 現在ノード周辺のタグ重なり
+- `isPrimary` 状態
 
-#### Response `200 OK`
+### 2-7. `generateRoleModelReply`
 
-```json
-{
-  "deletedTargetUserId": "uuid"
-}
-```
-
----
-
-### 2-11. `POST /api/role-models/advice` — ロールモデル比較のAI助言を取得する
-
-比較結果は DB に保存しない。毎回、自分の木と選択したロールモデルの木を取得して AI に渡し、その場で助言を生成する。
-
-#### Request
-
-```http
-POST /api/role-models/advice
-Authorization: Bearer <token>
-Content-Type: application/json
-```
-
-```json
-{
-  "targetUserId": "uuid"
-}
-```
-
-#### バックエンド内部の処理フロー
-
-```
-1. targetUserId が自分の保存済みロールモデルに含まれるか確認する
-2. 自分の木を取得する
-3. ロールモデルの木を取得する
-4. 現在ノード・共通タグ・差分タグ・未来候補を抽出する
-5. AI に「今の位置」「次の一手」「準備」「避けるべき罠」を生成させる
-6. レスポンス返却
-```
-
-#### Response `200 OK`
-
-```json
-{
-  "advice": {
-    "currentPosition": "今は大学生として、エンジニア志向と就職志向が同時に見えている段階です。",
-    "nextStep": "まずは開発経験を増やして、就職時に作れるものを明確にするのが有効です。",
-    "preparation": [
-      "週次でアウトプットを残す",
-      "インターンで現場経験を積む"
-    ],
-    "pitfalls": [
-      "選択肢を広げすぎて意思決定が遅くなる",
-      "作る経験より情報収集を優先しすぎる"
-    ]
-  }
-}
-```
+| 項目 | 内容 |
+| --- | --- |
+| 役割 | AI相談画面での擬似人格応答 |
+| 呼び出し元 | `/chat/model/[uid]` |
+| 入力 | `targetUserId`, `message`, `history[]` |
+| 備考 | room 保存は行わず、その場の会話のみ保持 |
 
 ---
 
-## 3. 木操作パターンまとめ
+## 3. Server Helper 詳細
 
-### パターンA：末尾追加（最もシンプル）
+### 3-1. ホーム
 
-```
-Before: A → B → C
-After:  A → B → C → D（新規）
-```
+- `/` は server side で `listUserTreeNodes` を呼び、初期グラフデータを作る
+- 主ロールモデルがあれば `getPrimaryRoleModelHomeCard` で比較カードを描く
+- mock graph は `NEXT_PUBLIC_USE_MOCK_GRAPH_DATA=true` の場合だけ有効
 
-```http
-POST /api/nodes
-{ "parentId": "C_id", "concreteAnswer": "...", "abstractAnswer": "..." }
-```
+### 3-2. ロールモデル詳細
 
----
+- `/profile/[uid]` は `getRoleModelDetail` でプロフィール、タイムライン、ツリー、保存状態をまとめて取得
+- AI相談は `/chat/model/[uid]`
+- 実ユーザー DM は `/chat/user/[uid]`
 
-### パターンB：差し込み（BとCの間にXを挿入）
+### 3-3. チャット
 
-```
-Before: A → B → C
-After:  A → B → X（新規） → C
-```
-
-```http
-# Step 1: XをBの子としてINSERT
-POST /api/nodes
-{ "parentId": "B_id", "concreteAnswer": "...", "abstractAnswer": "..." }
-# → X_id が返ってくる
-
-# Step 2: CのparentIdをX_idに変更
-PATCH /api/nodes/C_id
-{ "parentId": "X_id" }
-```
+- `/chat` は `ensureChatRoomsForCurrentUser()` のあと `listChatRoomsForCurrentUser()` を呼ぶ
+- `/chat/[roomId]` は `getChatRoomForCurrentUser()` で membership を確認し、`listMessagesForRoom()` で履歴を出す
 
 ---
 
-### パターンC：前に追加（ルートAの前にYを挿入）
+## 4. Realtime / クライアント直接通信
 
-```
-Before: A（root） → B → C
-After:  Y（新root） → A → B → C
-```
+チャットだけは例外的に client 側から Supabase に接続している。
 
-```http
-# Step 1: YをrootとしてINSERT
-POST /api/nodes
-{ "parentId": null, "concreteAnswer": "...", "abstractAnswer": "..." }
-# → Y_id が返ってくる
+### 4-1. メッセージ送信
 
-# Step 2: AのparentIdをY_idに変更
-PATCH /api/nodes/A_id
-{ "parentId": "Y_id" }
-```
+- client component から `messages` テーブルへ insert
+- 送信後はローカル state に即反映
 
----
+### 4-2. 新着同期
 
-### パターンD：中間ノード削除（BをA→Cにつなぎ直して削除）
+- `channel("room:${roomId}:messages")`
+- `postgres_changes` で `messages` の `INSERT` を購読
 
-```
-Before: A → B → C
-After:  A → C（バックエンドが自動でつなぎ直す）
-```
+### 4-3. 入力中表示
 
-```http
-DELETE /api/nodes/B_id
-```
+- Supabase Realtime の `broadcast` を利用
+- payload は `userId`, `roomId`, `isTyping`
 
 ---
 
-## 4. エラーコード一覧
+## 5. エラーコード
 
-| HTTP | コード               | 説明                                               |
-| ---- | -------------------- | -------------------------------------------------- |
-| 400  | `VALIDATION_ERROR`   | リクエストボディのバリデーション失敗               |
-| 401  | `UNAUTHORIZED`       | JWTが未提供または期限切れ                          |
-| 403  | `FORBIDDEN`          | 他人のリソースへのアクセス                         |
-| 404  | `NODE_NOT_FOUND`     | ノードが存在しない                                 |
-| 404  | `PROFILE_NOT_FOUND`  | プロフィールが存在しない                           |
-| 422  | `CIRCULAR_REFERENCE` | 親子関係が循環してしまう操作                       |
-| 500  | `INTERNAL_ERROR`     | サーバー内部エラー                                 |
-| 503  | `AI_UNAVAILABLE`     | OpenRouter / LLM API が応答しない（リトライ3回後） |
-
----
-
-## 5. AIプロンプト設計
-
-### 5-1. 深掘り質問生成（`POST /api/nodes` 内部）
-
-```
-あなたはユーザーの意思決定の背景にある価値観や動機を引き出すインタビュアーです。
-
-## ユーザーの最終目標
-{profile.goal}
-
-## これまでの意思決定の木（古い順）
-1. {node1.concreteAnswer}（理由: {node1.abstractAnswer}）
-2. {node2.concreteAnswer}（理由: {node2.abstractAnswer}）
-...
-N. {newNode.concreteAnswer}（理由: {newNode.abstractAnswer}） ← 今回追加されたノード
-
-## タスク
-上記の文脈を踏まえ、ユーザーが「なぜこの行動をしたのか」「過去の経験がどう影響しているか」を
-自然に引き出せる深掘り質問を1つだけ日本語で生成してください。
-質問は短く、具体的で、ユーザーが内省しやすい表現にしてください。
-```
-
-### 5-2. タグ自動付与（`POST /api/nodes` / `POST /api/onboarding` 内部）
-
-```
-以下のノード情報をもとに、適切なタグIDを選んでください。
-
-## 入力
-concreteAnswer: {concreteAnswer}
-abstractAnswer: {abstractAnswer}
-
-## 利用可能なタグ（realTags）
-{realTagsList}  ← DBからバックエンドが取得して埋め込む
-
-## 利用可能なタグ（emotionalTags）
-{emotionalTagsList}  ← DBからバックエンドが取得して埋め込む
-
-## 出力形式（JSONのみ返してください）
-{
-  "realTags": ["uuid", ...],
-  "emotionalTags": ["uuid", ...]
-}
-```
-
-> タグリストはバックエンドがDBから取得してプロンプトに埋め込む。フロントへの公開は不要。
+| コード | 説明 |
+| --- | --- |
+| `UNAUTHORIZED` | 未ログイン |
+| `VALIDATION_ERROR` | 入力不正 |
+| `NODE_NOT_FOUND` | ノードが存在しない |
+| `PROFILE_NOT_FOUND` | プロフィールが存在しない |
+| `FORBIDDEN` | 他人のデータへアクセスしようとした |
+| `CIRCULAR_REFERENCE` | ノードの循環参照 |
+| `ROLE_MODEL_SELECTION_NOT_FOUND` | 保存済みロールモデルが見つからない |
+| `INTERNAL_ERROR` | 想定外エラー |
 
 ---
+
+## 6. 現在の実装上の注意
+
+- docs 上の `/api/*` は現行実装の主インターフェースではない
+- チャットは WebRTC ではなく Supabase Realtime
+- 実ユーザー DM と既定の mentor room は、どちらも `chat_rooms.room_type = dm_model` を使っている
+- AI相談画面は chat room ではなく、専用 page + Server Action で応答を返している

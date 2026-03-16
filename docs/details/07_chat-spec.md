@@ -4,317 +4,211 @@
 
 ## 0. 目的
 
-Decision Path におけるチャット機能の MVP 仕様を定義する。
+Decision Path の会話体験は、現行実装では次の 3 本で構成する。
 
-本仕様は以下の 2 種類の会話を、**room ベースの共通構造**で扱うことを前提とする。
+1. 実ユーザー同士の 1対1 DM
+2. goal ベースの community room
+3. ロールモデル擬似人格との AI相談
 
-1. ロールモデルとの 1 対 1 チャット
-2. 同じ goal を持つユーザー同士のコミュニティチャット
-
----
-
-## 1. 設計前提
-
-
-| 項目      | 内容                  |
-| ------- | ------------------- |
-| フロントエンド | Next.js App Router  |
-| 認証      | Supabase Auth       |
-| DB      | Supabase PostgreSQL |
-| ORM     | Prisma              |
-| チャット送受信 | Supabase JS         |
-| リアルタイム  | Supabase Realtime   |
-| 実装優先度   | MVP / 最短実装          |
-|         |                     |
-
-
-> 注意: 現在のチャット機能は **DB レイヤーでの厳密な access control をまだ持たない**。  
-> そのため、本仕様は「MVP の動作仕様」であり、本番運用レベルの認可仕様ではない。
+このうち **1 と 2 は room ベース**、**3 は room を持たない専用画面** である。
 
 ---
 
-## 2. スコープ
+## 1. 現行実装の前提
 
-### 対象
+| 項目 | 内容 |
+| --- | --- |
+| フロントエンド | Next.js App Router |
+| DB | Supabase PostgreSQL |
+| ORM | Prisma |
+| 認証 | Supabase Auth |
+| リアルタイム | Supabase Realtime |
+| メッセージ送信 | Supabase JS から `messages` へ insert |
+| 入力中表示 | Supabase Realtime の `broadcast` |
 
-- `/chat` で自分の所属 room 一覧を表示する
-- `/chat/[roomId]` でメッセージ履歴を表示する
-- room にメッセージを送信できる
-- 別タブで新規メッセージがリアルタイム反映される
-- DM と community を同じテーブル構造で扱う
+重要:
 
-### 対象外
-
-- 既読
-- 添付ファイル
-- 返信
-- スタンプ / リアクション
-- 通知
-- 管理画面
-- 通報 / モデレーション
-- 本番レベルの認可強化
+- これは **RTC = WebRTC / P2P 通信** ではない
+- 実態は **Supabase Realtime を使った server-mediated realtime chat**
 
 ---
 
-## 3. 画面仕様
+## 2. 画面とルート
 
-### 3-1. チャット一覧
-
-
-| 項目   | 内容                                       |
-| ---- | ---------------------------------------- |
-| URL  | `/chat`                                  |
-| 役割   | 自分が所属する room の一覧表示                       |
-| 表示項目 | room 名 / room 種別 / goal / 最新メッセージ / 更新時刻 |
-| 主な操作 | room を選択して詳細へ遷移                          |
-
-
-#### room 自動生成ルール
-
-`/chat` 初回表示時に、ログインユーザーに対して以下を自動補完する。
-
-1. `dm_model` room を 1 つ作成または再利用する
-2. `profiles.goal` が設定されていれば、その goal の `community` room を 1 つ作成または再利用する
-3. 作成済み room には `chat_room_members` を通して自動参加させる
+| 画面 | URL | 役割 |
+| --- | --- | --- |
+| チャット一覧 | `/chat` | 自分の所属 room 一覧 |
+| チャット詳細 | `/chat/[roomId]` | room ベースの会話 |
+| 実ユーザーDM導線 | `/chat/user/[uid]` | 1対1 room を再利用 / 作成して redirect |
+| AI相談 | `/chat/model/[uid]` | ロールモデル擬似人格との対話 |
 
 ---
 
-### 3-2. room 詳細
+## 3. room ベース会話の仕様
 
+### 3-1. 対象
 
-| 項目   | 内容                               |
-| ---- | -------------------------------- |
-| URL  | `/chat/[roomId]`                 |
-| 役割   | メッセージ履歴の閲覧と送信                    |
-| 表示項目 | room 名 / goal / メッセージ一覧 / 入力フォーム |
-| 主な操作 | メッセージ送信                          |
+- 実ユーザー同士の 1対1 DM
+- community room
 
+### 3-2. 使用テーブル
 
-#### 表示制御
+| テーブル | 役割 |
+| --- | --- |
+| `chat_rooms` | room 本体 |
+| `chat_room_members` | room と user の所属関係 |
+| `messages` | メッセージ本文 |
 
-- サーバー側で `chat_room_members` を参照し、対象ユーザーが room に所属している場合のみ表示する
-- 所属していない room は `notFound` 扱いにする
+### 3-3. room_type
 
----
+現行の room 種別は次の 2 つ。
 
-## 4. データモデル
+| `room_type` | 用途 |
+| --- | --- |
+| `dm_model` | 既定の mentor room と実ユーザー 1対1 DM の両方で使用 |
+| `community` | goal ベースのコミュニティ |
 
-チャットは以下 3 テーブルで構成する。
+注意:
 
-### 4-1. `chat_rooms`
-
-room 本体を表す。
-
-
-| カラム          | 型           | 説明                       |
-| ------------ | ----------- | ------------------------ |
-| `id`         | UUID        | room ID                  |
-| `name`       | TEXT        | room 名                   |
-| `room_type`  | VARCHAR(20) | `dm_model` / `community` |
-| `created_by` | UUID        | room 作成者                 |
-| `goal`       | TEXT NULL   | 関連する goal                |
-| `created_at` | TIMESTAMP   | 作成日時                     |
-
-
-### 4-2. `chat_room_members`
-
-room と user の所属関係を表す。
-
-
-| カラム         | 型         | 説明      |
-| ----------- | --------- | ------- |
-| `room_id`   | UUID      | room ID |
-| `user_id`   | UUID      | user ID |
-| `joined_at` | TIMESTAMP | 参加日時    |
-
-
-主キーは `(room_id, user_id)` の複合キーとする。
-
-### 4-3. `messages`
-
-メッセージ本体を表す。
-
-
-| カラム          | 型         | 説明          |
-| ------------ | --------- | ----------- |
-| `id`         | UUID      | message ID  |
-| `room_id`    | UUID      | 所属 room     |
-| `sender_id`  | UUID      | 送信者 user ID |
-| `content`    | TEXT      | 本文          |
-| `created_at` | TIMESTAMP | 送信日時        |
-
+- 実ユーザー DM 専用の `dm_user` type は **まだ導入していない**
+- 人間 DM かどうかは、room 解決時に `peerProfile` が付くかどうかで UI を分けている
 
 ---
 
-## 5. room 種別
+## 4. 一覧表示仕様
 
+### 4-1. `/chat`
 
-| `room_type` | 用途                  | 備考                          |
-| ----------- | ------------------- | --------------------------- |
-| `dm_model`  | ロールモデルとの 1 対 1 チャット | 初期段階では AI 応答未接続でもよい         |
-| `community` | 同じ goal を持つユーザーの会話  | room 名は `goal + コミュニティ` とする |
+初回表示時に server side で次を行う。
 
+1. `ensureChatRoomsForCurrentUser()` を実行
+2. 必要なら既定 mentor room を補完
+3. `goal` があれば community room を補完
+4. `listChatRoomsForCurrentUser()` で membership 付き room 一覧を返す
+
+### 4-2. 一覧カードの表示
+
+| 条件 | 表示タイトル | 表示サブ情報 |
+| --- | --- | --- |
+| peerProfile がある | 相手ユーザー名 | 相手の職業または最新メッセージ |
+| `room_type = dm_model` かつ peerProfile なし | room 名 | mentor 用の説明文または最新メッセージ |
+| `room_type = community` | room 名 | `goal` または最新メッセージ |
 
 ---
 
-## 6. 取得・送信フロー
+## 5. room 詳細仕様
 
-### 6-1. 一覧表示
+### 5-1. `/chat/[roomId]`
 
-```mermaid
-sequenceDiagram
-    participant User as ユーザー
-    participant FE as Next.js Server Component
-    participant SB as Supabase
+表示前に server side で次を行う。
 
-    User->>FE: /chat にアクセス
-    FE->>SB: 自分の session を取得
-    FE->>SB: DM room を作成または再利用
-    FE->>SB: goal があれば community room を作成または再利用
-    FE->>SB: 自分の membership 一覧を取得
-    FE->>SB: 最新 message を取得
-    SB-->>FE: room 一覧
-    FE-->>User: /chat を表示
+1. `getChatRoomForCurrentUser(roomId)` で membership を確認
+2. 非所属なら `notFound`
+3. `listMessagesForRoom(roomId)` で `createdAt asc` の履歴を返す
+
+### 5-2. メッセージ送信
+
+client component 側で次を実行する。
+
+```ts
+supabase.from("messages").insert({
+  room_id,
+  sender_id: currentUserId,
+  content,
+})
 ```
 
+### 5-3. 新着同期
 
+`chat-room-view.tsx` では `room:${roomId}:messages` channel を作り、次を購読する。
 
-### 6-2. room 詳細表示
+- `postgres_changes` on `messages` `INSERT`
+- `broadcast` event `typing`
 
-```mermaid
-sequenceDiagram
-    participant User as ユーザー
-    participant FE as Next.js Server Component
-    participant SB as Supabase
+### 5-4. 入力中表示
 
-    User->>FE: /chat/:roomId にアクセス
-    FE->>SB: chat_room_members で membership を確認
-    FE->>SB: messages を created_at 昇順で取得
-    SB-->>FE: room 情報 + message 一覧
-    FE-->>User: room 画面を表示
-```
-
-
-
-### 6-3. メッセージ送信
-
-```mermaid
-sequenceDiagram
-    participant User as ユーザー
-    participant Client as Client Component
-    participant SB as Supabase
-
-    User->>Client: メッセージを入力して送信
-    Client->>SB: INSERT INTO messages
-    SB-->>Client: 保存済み message
-    SB-->>Client: Realtime event
-    Client-->>User: 一覧を更新
-```
-
-
+- payload: `{ userId, roomId, isTyping }`
+- broadcast 受信後、一定時間だけ `入力中...` を表示
+- 表示文言は peerProfile の有無で出し分ける
 
 ---
 
-## 7. Realtime 仕様
+## 6. AI相談仕様
 
-Realtime は `messages` テーブルを対象に `postgres_changes` を購読する。
+### 6-1. `/chat/model/[uid]`
 
-### 購読条件
+AI相談は room を作らない。
 
-- schema: `public`
-- table: `messages`
-- filter: `room_id=eq.{roomId}`
-- event: `INSERT`
+構成:
 
-### UI 反映方針
+- 初回表示時に `getRoleModelChatPersona(uid)` で persona prompt を構築
+- client 側で会話履歴を state 保持
+- 送信時に `generateRoleModelReply()` を呼び、AI 応答を返す
 
-- 新着 message をローカル state にマージする
-- 同一 `id` が既に存在する場合は重複追加しない
-- 新着受信時は最下部までスクロールする
+### 6-2. 文脈
+
+AI に渡す主な材料:
+
+- 公開プロフィール
+- 意思決定ツリー
+- タイムライン由来の要約
+- 直近の会話履歴（最大 16 message）
+
+### 6-3. 保存
+
+- AI相談の会話履歴は DB 保存しない
+- 画面を離れるとその場の履歴は消える
+
+---
+
+## 7. 実ユーザーDM導線
+
+### 7-1. `/chat/user/[uid]`
+
+処理:
+
+1. `getOrCreateUserDmRoomForCurrentUser(uid)` を呼ぶ
+2. 既存 room があれば再利用
+3. 無ければ `chat_rooms` と `chat_room_members` を作成
+4. `/chat/[roomId]` に redirect
+
+### 7-2. 制約
+
+- 自分自身には遷移させない
+- 相手の `profiles.onboarded` が false なら作成しない
 
 ---
 
 ## 8. アクセス制御
 
-### 現在の方針
+現行方針は DB 側の厳密な認可より、アプリケーション側制御が中心。
 
-現在は **RLS 未使用** とし、以下のアプリ側制御のみを実施する。
+### 実施していること
 
-- `/chat` 一覧は `chat_room_members.user_id = currentUserId` で絞る
-- `/chat/[roomId]` は `chat_room_members` に所属がある場合だけ表示する
+- チャット一覧は `chat_room_members.user_id = currentUserId` で絞る
+- room 詳細は membership を server side で確認する
+- AI相談は `targetUserId === currentUserId` を弾く
 
-### 制約
+### まだ弱い点
 
-この方式では、Supabase クライアントを直接叩いた場合の DB レベル保護はない。
-
-したがって、現時点では以下を満たさない。
-
-- room member 以外の DB 読み取り防止
-- room member 以外の message insert 防止
-- `sender_id = auth.uid()` の DB レベル保証
-
-### 将来の強化方針
-
-本番運用前には以下のいずれかへ移行する。
-
-1. RLS を導入して DB レベルで認可する
-2. メッセージ送信を server action / Route Handler 経由にし、サーバー側で membership を検証する
+- `messages` insert は client から直接行っている
+- DB レベルで `sender_id = auth.uid()` を保証していない
+- RLS の強化は今後の改善項目
 
 ---
 
-## 9. エラー / 空状態
+## 9. 既知の技術的負債
 
+| 項目 | 現状 |
+| --- | --- |
+| 実ユーザー DM の room_type | `dm_model` を流用している |
+| AI相談の永続化 | なし |
+| 既読 / unread | `unreadCount` は常に 0 |
+| 添付ファイル | 未対応 |
+| RLS 強化 | 未着手 |
 
-| ケース           | 表示方針                 |
-| ------------- | -------------------- |
-| room が 0 件    | 「チャットルームはまだありません」を表示 |
-| message が 0 件 | 「まだメッセージはありません」を表示   |
-| room 非所属      | 404 相当の画面に遷移         |
-| insert 失敗     | エラーメッセージをフォーム下に表示    |
-| Realtime 未接続  | 送信は可能。自動更新のみ失敗       |
+将来的に整理するなら:
 
-
----
-
-## 10. MVP 実装方針
-
-
-| 項目        | 方針                                         |
-| --------- | ------------------------------------------ |
-| DB スキーマ管理 | Prisma migration                           |
-| 画面実装      | Next.js App Router                         |
-| データ取得     | Server Component + Supabase server client  |
-| 送信        | Client Component + Supabase browser client |
-| リアルタイム受信  | Supabase Realtime                          |
-| room 自動作成 | サーバー側 helper で実施                           |
-
-
----
-
-## 11. 将来拡張
-
-将来的には以下を追加可能とする。
-
-- AI ロールモデル応答の自動生成
-- community room への自動参加条件の細分化
-- unread count
-- message 既読管理
-- 添付ファイル
-- moderation
-- 通知
-- server-side message validation
-- RLS 導入
-
----
-
-## 12. 実装メモ
-
-- `profiles.id` は `auth.users.id` と同値である
-- room 一覧は `chat_room_members` を起点に取得する
-- `messages` は `room_id, created_at` の複合 index を持つ
-- `messages` テーブルは Realtime publication に追加する
-- DM room は「ユーザーごとに 1 room」を基本とする
-- community room は「goal ごとに 1 room」を基本とする
-
----
-
+1. `dm_user` を分ける
+2. `messages` 送信を server action 経由に寄せる
+3. unread と read receipt を導入する

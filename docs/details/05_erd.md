@@ -4,27 +4,28 @@
 
 ## 0. 設計前提
 
-| 項目         | 内容                                 |
-| ------------ | ------------------------------------ |
-| DB           | Supabase（PostgreSQL）               |
-| ORM          | Prisma                               |
-| ID 戦略      | UUID（全テーブル共通）               |
-| 認証         | Supabase Auth（`auth.users` を参照） |
-| アクセス制御 | Supabase RLS                         |
-| 論理削除     | なし（MVP）                          |
+| 項目 | 内容 |
+| --- | --- |
+| DB | Supabase PostgreSQL |
+| ORM | Prisma |
+| 認証 | Supabase Auth (`auth.users`) |
+| ID 戦略 | UUID |
+| 論理削除 | なし |
 
 ---
 
 ## 1. テーブル一覧
 
-| テーブル             | 役割                                            | Phase |
-| -------------------- | ----------------------------------------------- | ----- |
-| `profiles`           | ユーザーのアプリ固有情報（`auth.users` の拡張） | P0    |
-| `tags`               | タグマスタ（realTag・emotionalTag 共通）        | P0    |
-| `abstract_questions` | 抽象質問マスタ（意思決定の背景・軸を問う質問）  | P0    |
-| `concrete_questions` | 具体質問マスタ（実際の選択を問う質問）          | P0    |
-| `nodes`              | ユーザーの意思決定ログ（木の1ノード）           | P0    |
-| `role_model_selections` | ユーザーが保存したロールモデルの対応表       | P1    |
+| テーブル | 役割 |
+| --- | --- |
+| `profiles` | アプリ固有のプロフィール情報 |
+| `tags` | AI タグ付けで使うタグマスタ |
+| `abstract_questions` | 抽象質問マスタ |
+| `nodes` | ユーザーの意思決定ログ |
+| `role_model_selections` | 保存したロールモデル |
+| `chat_rooms` | chat room 本体 |
+| `chat_room_members` | room と user の所属関係 |
+| `messages` | メッセージ本文 |
 
 ---
 
@@ -49,6 +50,7 @@ erDiagram
         varchar name
         varchar type
         text description
+        timestamp created_at
     }
 
     abstract_questions {
@@ -58,17 +60,9 @@ erDiagram
         timestamp created_at
     }
 
-    concrete_questions {
-        uuid id PK
-        text question
-        text description
-        timestamp created_at
-    }
-
     nodes {
         uuid id PK
         uuid user_id FK
-        uuid concrete_question_id FK
         uuid abstract_question_id FK
         text concrete_answer
         text abstract_answer
@@ -88,12 +82,39 @@ erDiagram
         timestamp updated_at
     }
 
+    chat_rooms {
+        uuid id PK
+        text name
+        varchar room_type
+        uuid created_by FK
+        text goal
+        timestamp created_at
+    }
+
+    chat_room_members {
+        uuid room_id FK
+        uuid user_id FK
+        timestamp joined_at
+    }
+
+    messages {
+        uuid id PK
+        uuid room_id FK
+        uuid sender_id FK
+        text content
+        timestamp created_at
+    }
+
     profiles ||--o{ nodes : "has"
-    profiles ||--o{ role_model_selections : "selects"
-    profiles ||--o{ role_model_selections : "selected as role model"
-    concrete_questions ||--o{ nodes : "referenced by"
     abstract_questions ||--o{ nodes : "referenced by"
-    nodes ||--o{ nodes : "parent_id"
+    nodes ||--o{ nodes : "parent-child"
+    profiles ||--o{ role_model_selections : "saves"
+    profiles ||--o{ role_model_selections : "selected as role model"
+    profiles ||--o{ chat_rooms : "creates"
+    profiles ||--o{ chat_room_members : "joins"
+    profiles ||--o{ messages : "sends"
+    chat_rooms ||--o{ chat_room_members : "has members"
+    chat_rooms ||--o{ messages : "has messages"
 ```
 
 ---
@@ -102,166 +123,125 @@ erDiagram
 
 ### `profiles`
 
-`auth.users` の認証情報とは分けて、アプリ内で編集するプロフィール情報のみを持つ。
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | UUID | PK / FK → `auth.users.id` | 認証ユーザー ID |
+| `display_name` | VARCHAR(50) | NULLABLE | 表示名。アプリ上は必須入力 |
+| `goal` | TEXT | NULLABLE | 将来的な goal / community 判定用 |
+| `avatar_url` | TEXT | NULLABLE | プロフィール画像 URL |
+| `current_occupation` | TEXT | NULLABLE | 現在の活動 / 職業 |
+| `age` | SMALLINT | NULLABLE | 年齢 |
+| `location` | TEXT | NULLABLE | 居住地 |
+| `onboarded` | BOOLEAN | NOT NULL DEFAULT false | 初回導線完了フラグ |
+| `created_at` | TIMESTAMP | NOT NULL DEFAULT now() | 作成日時 |
 
-| カラム               | 型        | 制約                      | 説明                                         |
-| -------------------- | --------- | ------------------------- | -------------------------------------------- |
-| `id`                 | UUID      | PK / FK → `auth.users.id` | Supabase Auth のユーザー ID と同値           |
-| `display_name`       | VARCHAR   | NULLABLE                  | 他ユーザーに見える表示名。アプリでは必須入力 |
-| `goal`               | TEXT      |                           | ユーザーが設定した最終目標                   |
-| `avatar_url`         | TEXT      | NULLABLE                  | プロフィールに表示するアイコン画像の URL     |
-| `current_occupation` | TEXT      | NULLABLE                  | 現在の職業                                   |
-| `age`                | SMALLINT  | NULLABLE                  | プロフィール表示用の年齢                     |
-| `location`           | TEXT      | NULLABLE                  | 現在住んでいる場所（都道府県・市区町村など） |
-| `onboarded`          | BOOLEAN   | NOT NULL DEFAULT false    | 初回アンケート完了フラグ                     |
-| `created_at`         | TIMESTAMP | NOT NULL                  |                                              |
+補足:
 
-CHECK:
-
-- `display_name`, `avatar_url`, `current_occupation`, `location` は空文字不可
+- `display_name`, `avatar_url`, `current_occupation`, `location` は空文字禁止
 - `age` は `0..150`
-
----
 
 ### `tags`
 
-realTag・emotionalTag で共通利用するタグマスタ。運営がシードで投入。
-
-| カラム        | 型        | 制約            | 説明                                                    |
-| ------------- | --------- | --------------- | ------------------------------------------------------- |
-| `id`          | UUID      | PK              |                                                         |
-| `name`        | VARCHAR   | NOT NULL UNIQUE | タグ名（例：「大学進学」「安定」「挑戦」）              |
-| `type`        | VARCHAR   | NOT NULL        | `real`（事実ベース）/ `emotional`（感情・価値観ベース） |
-| `description` | TEXT      |                 | タグの説明                                              |
-| `created_at`  | TIMESTAMP | NOT NULL        |                                                         |
-
-INDEX: `type`, `name`
-
----
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | UUID | PK | タグ ID |
+| `name` | VARCHAR(100) | UNIQUE | タグ名 |
+| `type` | VARCHAR(20) | NOT NULL | `real` または `emotional` |
+| `description` | TEXT | NULLABLE | 補足説明 |
+| `created_at` | TIMESTAMP | NOT NULL DEFAULT now() | 作成日時 |
 
 ### `abstract_questions`
 
-意思決定の背景・軸を問う抽象的な質問のマスタ。運営がシードで投入。
-
-| カラム        | 型        | 制約     | 説明                                               |
-| ------------- | --------- | -------- | -------------------------------------------------- |
-| `id`          | UUID      | PK       |                                                    |
-| `question`    | TEXT      | NOT NULL | 質問文（例：「その選択で何を大切にしましたか？」） |
-| `description` | TEXT      |          | 質問の補足説明                                     |
-| `created_at`  | TIMESTAMP | NOT NULL |                                                    |
-
----
-
-### `concrete_questions`
-
-実際の選択を問う具体的な質問のマスタ。運営がシードで投入。
-
-| カラム        | 型        | 制約     | 説明                                                         |
-| ------------- | --------- | -------- | ------------------------------------------------------------ |
-| `id`          | UUID      | PK       |                                                              |
-| `question`    | TEXT      | NOT NULL | 質問文（例：「大学卒業後、どのような進路を選びましたか？」） |
-| `description` | TEXT      |          | 質問の補足説明                                               |
-| `created_at`  | TIMESTAMP | NOT NULL |                                                              |
-
----
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | UUID | PK | 質問 ID |
+| `question` | TEXT | NOT NULL | 抽象質問 |
+| `description` | TEXT | NULLABLE | 補足説明 |
+| `created_at` | TIMESTAMP | NOT NULL DEFAULT now() | 作成日時 |
 
 ### `nodes`
 
-ユーザーの意思決定ログ。1レコード = 木の1ノード。
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | UUID | PK | ノード ID |
+| `user_id` | UUID | FK → `profiles.id` | 所有者 |
+| `abstract_question_id` | UUID | FK → `abstract_questions.id`, NULLABLE | 付属する抽象質問 |
+| `concrete_answer` | TEXT | NOT NULL | 今何をしているか / 何を選んだか |
+| `abstract_answer` | TEXT | NULLABLE | なぜそうしたか |
+| `real_tags` | JSONB | NOT NULL DEFAULT `[]` | 事実タグ ID 配列 |
+| `emotional_tags` | JSONB | NOT NULL DEFAULT `[]` | 感情タグ ID 配列 |
+| `visual_state` | VARCHAR(50) | NULLABLE | 可視化用状態 |
+| `parent_id` | UUID | FK → `nodes.id`, NULLABLE | 親ノード。NULL はルート |
+| `created_at` | TIMESTAMP | NOT NULL DEFAULT now() | 作成日時 |
 
-| カラム                 | 型        | 制約                                  | 説明                                                                                        |
-| ---------------------- | --------- | ------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `id`                   | UUID      | PK                                    |                                                                                             |
-| `user_id`              | UUID      | FK → `auth.users.id` NOT NULL         | ノードの所有者。RLS でアクセス制御                                                          |
-| `concrete_question_id` | UUID      | FK → `concrete_questions.id` NOT NULL | このノードで答えた具体質問                                                                  |
-| `abstract_question_id` | UUID      | FK → `abstract_questions.id` NULLABLE | このノードに付属する抽象質問（任意）                                                        |
-| `concrete_answer`      | TEXT      | NOT NULL                              | 具体質問へのユーザーの回答（例：「大企業に就職した」）                                      |
-| `abstract_answer`      | TEXT      |                                       | 抽象質問へのユーザーの回答（例：「安定を求めていた」）                                      |
-| `real_tags`            | JSONB     | NOT NULL DEFAULT '[]'                 | 事実ベースのタグ ID 配列（例：`["uuid-1", "uuid-2"]`）。タグ名ではなく `tags.id` を保持する |
-| `emotional_tags`       | JSONB     | NOT NULL DEFAULT '[]'                 | 感情・価値観ベースのタグ ID 配列。タグ名表示時は `tags` テーブルを参照する                  |
-| `visual_state`         | VARCHAR   |                                       | 3D 可視化用の状態値（色・感情等を文字列で保持）                                             |
-| `parent_id`            | UUID      | FK → `nodes.id` NULLABLE              | 親ノードの ID。NULL = 木のルート                                                            |
-| `created_at`           | TIMESTAMP | NOT NULL                              |                                                                                             |
+補足:
 
-INDEX: `user_id`, `parent_id`, `real_tags`（GIN）, `emotional_tags`（GIN）
-
----
+- 木構造は隣接リスト方式
+- 未来候補検索では `real_tags` / `emotional_tags` の重なりを使う
 
 ### `role_model_selections`
 
-ユーザーが「今はこの人を参考にしたい」と保存したロールモデルの対応表。
-AI の比較アドバイスはこの保存情報を起点に、都度 `profiles` と `nodes` を参照して生成する。
-
-| カラム               | 型        | 制約                                                    | 説明                                                        |
-| -------------------- | --------- | ------------------------------------------------------- | ----------------------------------------------------------- |
-| `id`                 | UUID      | PK                                                      |                                                             |
-| `user_id`            | UUID      | FK → `auth.users.id` NOT NULL                           | ロールモデルを保存したユーザー                              |
-| `role_model_user_id` | UUID      | FK → `auth.users.id` NOT NULL                           | 保存対象のロールモデルユーザー                              |
-| `is_primary`         | BOOLEAN   | NOT NULL DEFAULT false                                  | 現在比較に使うメインのロールモデルか                        |
-| `created_at`         | TIMESTAMP | NOT NULL                                                | 保存日時                                                    |
-| `updated_at`         | TIMESTAMP | NOT NULL                                                | 主ロールモデル切り替えなどで更新される日時                  |
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | UUID | PK | 行 ID |
+| `user_id` | UUID | FK → `profiles.id` | 保存した側 |
+| `role_model_user_id` | UUID | FK → `profiles.id` | 保存された側 |
+| `is_primary` | BOOLEAN | NOT NULL DEFAULT false | 主ロールモデルか |
+| `created_at` | TIMESTAMP | NOT NULL DEFAULT now() | 保存日時 |
+| `updated_at` | TIMESTAMP | NOT NULL | 更新日時 |
 
 制約:
 
-- `UNIQUE (user_id, role_model_user_id)` で同一ユーザーの重複保存を禁止
-- `CHECK (user_id <> role_model_user_id)` で自分自身の保存を禁止
-- `WHERE is_primary = true` の部分ユニークインデックスで、各ユーザーの主ロールモデルは最大1件
+- `UNIQUE (user_id, role_model_user_id)`
+- `CHECK (user_id <> role_model_user_id)`
+- `WHERE is_primary = true` の部分ユニークで主ロールモデルは 1 件まで
 
-INDEX: `user_id, is_primary`, `role_model_user_id`
+### `chat_rooms`
 
----
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | UUID | PK | room ID |
+| `name` | TEXT | NOT NULL | room 名 |
+| `room_type` | VARCHAR(20) | NOT NULL | 現行は `dm_model` / `community` |
+| `created_by` | UUID | FK → `profiles.id` | 作成者 |
+| `goal` | TEXT | NULLABLE | community 用の goal |
+| `created_at` | TIMESTAMP | NOT NULL DEFAULT now() | 作成日時 |
 
-## 4. タグ検索のクエリイメージ
+補足:
 
-### emotionalTag が1件以上共通する他ユーザーのノードを取得
+- 実ユーザー DM も現行では `dm_model` を流用している
 
-```sql
--- 自分の emotional_tags と1つ以上一致する他人のノードを取得
-SELECT n.*
-FROM nodes n
-WHERE n.emotional_tags ?| array['uuid-tag-1', 'uuid-tag-2']
-  AND n.user_id != :my_user_id
-ORDER BY n.created_at DESC
-```
+### `chat_room_members`
 
-GIN インデックスにより高速に検索できる。
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `room_id` | UUID | PK(FK) → `chat_rooms.id` | room ID |
+| `user_id` | UUID | PK(FK) → `profiles.id` | user ID |
+| `joined_at` | TIMESTAMP | NOT NULL DEFAULT now() | 参加日時 |
 
-ここでいう検索は文字列の部分一致ではなく、タグ ID 集合の重なり検索。
-`nodes` にはタグ名ではなく `tags.id` の UUID を保持するため、タグ名変更や表記ゆれの影響を受けない。
+### `messages`
 
-### タグ名で部分一致検索してからノードを取得
-
-タグ名の文字列検索が必要な場合は、`nodes` を直接 `LIKE` 検索しない。
-先に `tags` を検索して `id` を引き、その UUID 群で `nodes` を検索する。
-
-```sql
-WITH matched_tags AS (
-  SELECT id
-  FROM tags
-  WHERE name ILIKE '%大学%'
-)
-SELECT n.*
-FROM nodes n
-WHERE n.real_tags ?| (
-  SELECT array_agg(id::text)
-  FROM matched_tags
-)
-ORDER BY n.created_at DESC;
-```
-
-つまり検索経路は次の2種類を使い分ける。
-
-- ノード同士の類似検索: `real_tags` / `emotional_tags` の UUID 配列同士の重なりを見る
-- タグ名検索: `tags.name` を検索してから `tags.id` で `nodes` を絞り込む
+| カラム | 型 | 制約 | 説明 |
+| --- | --- | --- | --- |
+| `id` | UUID | PK | message ID |
+| `room_id` | UUID | FK → `chat_rooms.id` | 所属 room |
+| `sender_id` | UUID | FK → `profiles.id` | 送信者 |
+| `content` | TEXT | NOT NULL | 本文 |
+| `created_at` | TIMESTAMP | NOT NULL DEFAULT now() | 送信日時 |
 
 ---
 
-## 5. RLS ポリシー方針
+## 4. 検索と利用メモ
 
-| テーブル             | 読み取り | 書き込み                |
-| -------------------- | -------- | ----------------------- |
-| `profiles`           | 本人のみ | 本人のみ                |
-| `nodes`              | 本人のみ | 本人のみ                |
-| `tags`               | 全員     | 不可（運営のみ直接 DB） |
-| `abstract_questions` | 全員     | 不可                    |
-| `concrete_questions` | 全員     | 不可                    |
+- ホームの未来候補は `nodes.real_tags` と `nodes.emotional_tags` の重なりを使う
+- ロールモデル一覧は `profiles` と `nodes` の最新分岐を合成して組み立てる
+- 主ロールモデル表示は `role_model_selections.is_primary = true` を見る
+- チャット一覧は `chat_room_members` と `messages` の最新 1 件を結合して作る
+
+---
+
+## 5. 現在の設計上の注意
+
+- `concrete_questions` テーブルは現行 schema には存在しない
+- AI相談の会話履歴は DB に保存していない
+- 人間 DM と mentor room の `room_type` 分離は今後の改善候補
