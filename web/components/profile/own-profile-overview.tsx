@@ -118,8 +118,8 @@ export function OwnProfileOverview({
         </CardAction>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="flex flex-col gap-5 rounded-[28px] border border-border/80 bg-[linear-gradient(180deg,rgba(246,248,251,0.95),rgba(255,255,255,1))] p-5 sm:flex-row sm:items-center">
-          <div className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-[28px] border border-border/80 bg-card shadow-sm">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          <div className="size-24 shrink-0 overflow-hidden rounded-2xl">
             {avatarUrl ? (
               <div
                 aria-label="プロフィール画像"
@@ -130,17 +130,17 @@ export function OwnProfileOverview({
                 }}
               />
             ) : (
-              <div className="flex size-full items-center justify-center bg-[radial-gradient(circle_at_top,#dce9ff,transparent_60%),linear-gradient(135deg,#f7f8fb,#eef1f6)]">
-                <span className="text-3xl font-semibold text-foreground/80">
+              <div className="flex size-full items-center justify-center bg-muted">
+                <span className="text-3xl font-semibold text-muted-foreground">
                   {avatarFallback}
                 </span>
               </div>
             )}
           </div>
 
-          <div className="min-w-0 flex-1 space-y-3">
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-muted-foreground">
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="space-y-0.5">
+              <p className="text-xs font-medium text-muted-foreground">
                 あなたの公開プロフィール
               </p>
               <h2 className="text-2xl font-semibold tracking-tight">
@@ -152,35 +152,28 @@ export function OwnProfileOverview({
                 {occupation.muted ? "現在の職業は未設定です" : occupation.text}
               </p>
             </div>
-            <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-border/80 bg-white/90 px-3 py-1.5 text-sm text-muted-foreground">
-              <Mail className="size-4 shrink-0" />
+            <div className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-sm text-muted-foreground">
+              <Mail className="size-3.5 shrink-0" />
               <span className="truncate">{email ?? "email not available"}</span>
             </div>
           </div>
         </div>
 
-        <div className="grid gap-3">
+        <div className="divide-y divide-border">
           {detailItems.map(({ Icon, label, value }) => (
-            <div
-              key={label}
-              className="flex items-center justify-between gap-4 rounded-2xl border border-border/70 bg-card px-4 py-4"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-muted">
-                  <Icon className="size-4 text-muted-foreground" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">{label}</p>
-                  <p
-                    className={
-                      value.muted
-                        ? "text-sm text-muted-foreground"
-                        : "text-sm text-foreground"
-                    }
-                  >
-                    {value.text}
-                  </p>
-                </div>
+            <div key={label} className="flex items-center gap-3 py-3">
+              <Icon className="size-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0">
+                <p className="text-xs text-muted-foreground">{label}</p>
+                <p
+                  className={
+                    value.muted
+                      ? "text-sm text-muted-foreground"
+                      : "text-sm font-medium"
+                  }
+                >
+                  {value.text}
+                </p>
               </div>
             </div>
           ))}
